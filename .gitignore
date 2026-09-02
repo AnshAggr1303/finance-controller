@@ -1,0 +1,27 @@
+# Python (backend)
+backend/venv/
+backend/__pycache__/
+backend/**/__pycache__/
+*.pyc
+
+# Environment secrets — never commit these
+.env
+.env.local
+backend/.env
+frontend/.env.local
+
+# Node / Next.js (frontend)
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+
+# Generated data — keep the generator script, not every run's output
+data/output/*.csv
+!data/output/.gitkeep
