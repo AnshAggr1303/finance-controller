@@ -24,6 +24,7 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 import data.generator as generator
+import data.push_to_db as push_to_db
 from app.db import supabase
 from app.graph.human_review import (
     _pattern_label,
@@ -154,8 +155,8 @@ def create_and_push_batch(req: CreateBatchRequest):
         orders_df["batch_id"] = batch_id
         bank_df["batch_id"] = batch_id
 
-        orders_records = [_clean_record(r) for r in orders_df.to_dict("records")]
-        bank_records = [_clean_record(r) for r in bank_df.to_dict("records")]
+        orders_records = [push_to_db.clean_record(r) for r in orders_df.to_dict("records")]
+        bank_records = [push_to_db.clean_record(r) for r in bank_df.to_dict("records")]
 
         supabase.table("raw_orders").insert(orders_records).execute()
         supabase.table("raw_bank_statements").insert(bank_records).execute()
