@@ -19,47 +19,42 @@ import argparse
 import re
 
 from app.db import supabase
+from app.graph.matching import FEE_PCT, ROUNDING_TOLERANCE
 
-# Mirror matching.py thresholds exactly -- human_review is a standalone script
-# so we don't import from matching, but these values must stay in sync.
-_FEE_PCT = 0.02             # 2% payment gateway fee
-_FEE_TOLERANCE_PP = 0.001   # ±0.1 percentage points
-_ROUNDING_TOLERANCE = 1.00  # ₹1 rounding cap
 
 
 def is_known_pattern(order_amount: float, bank_amount: float) -> bool:
-    """Return True if the delta between order and bank amounts fits one of the
-    three legitimate reconciliation patterns -- exact, 2% gateway fee (within
-    ±0.1pp), or sub-₹1 rounding drift.
+    """Return True if the delta fits one of the three legitimate patterns
+    from matching.py's evaluate_match -- identical algorithm, not a
+    reimplementation, so the warning gate and the deterministic matcher
+    always agree on what counts as a known pattern.
 
-    Thresholds are intentionally tight: a deduction of 2.3% is not a fee match.
+    Uses FEE_PCT and ROUNDING_TOLERANCE imported directly from matching.py
+    so there is one source of truth for both constants.
     """
-    delta = abs(order_amount - bank_amount)
-    if delta < 0.01:
-        return True  # exact match
+    if abs(order_amount - bank_amount) < 0.01:
+        return True  # exact
 
-    fee_adjusted = order_amount * (1 - _FEE_PCT)
-    effective_pct = (order_amount - bank_amount) / order_amount if order_amount else 0
-    if abs(effective_pct - _FEE_PCT) <= _FEE_TOLERANCE_PP:
-        return True  # 2% fee, within tolerance
+    fee_adjusted = round(order_amount * (1 - FEE_PCT), 2)
+    if abs(fee_adjusted - bank_amount) < 0.01:
+        return True  # 2% gateway fee -- rupee check, same as evaluate_match
 
-    if delta <= _ROUNDING_TOLERANCE:
+    if abs(order_amount - bank_amount) <= ROUNDING_TOLERANCE:
         return True  # rounding drift
 
     return False
 
 
 def _pattern_label(order_amount: float, bank_amount: float) -> str:
-    """Short inline label describing why a delta is (or is not) a known pattern.
-    Used purely for display next to each candidate.
+    """Inline label for display -- mirrors is_known_pattern using the same
+    three checks in the same order.
     """
-    delta = abs(order_amount - bank_amount)
-    if delta < 0.01:
+    if abs(order_amount - bank_amount) < 0.01:
         return "exact"
-    effective_pct = (order_amount - bank_amount) / order_amount if order_amount else 0
-    if abs(effective_pct - _FEE_PCT) <= _FEE_TOLERANCE_PP:
+    fee_adjusted = round(order_amount * (1 - FEE_PCT), 2)
+    if abs(fee_adjusted - bank_amount) < 0.01:
         return "~2% fee"
-    if delta <= _ROUNDING_TOLERANCE:
+    if abs(order_amount - bank_amount) <= ROUNDING_TOLERANCE:
         return "rounding"
     return "⚠ unknown pattern"
 
