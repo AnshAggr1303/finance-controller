@@ -17,6 +17,7 @@ Run:
 
 import argparse
 import re
+import sys
 
 from app.db import supabase
 from app.graph.matching import FEE_PCT, ROUNDING_TOLERANCE
@@ -120,6 +121,7 @@ def apply_decision(
     decision: dict,
     raw_input: str,
     order_amount: float = 0.0,
+    confirm_unknown: bool = False,
 ) -> str:
     if decision["action"] in ("confirm", "choose"):
         # Defensive check -- never index blindly, even if a parser bug
@@ -131,21 +133,9 @@ def apply_decision(
 
         candidate = candidates[idx]
 
-        # Pattern guard -- warn before writing if the delta doesn't match
-        # any known legitimate reconciliation pattern. This is the specific
-        # failure mode documented in PROJECT_STATUS.md: a reviewer confirmed
-        # 11/11 wrong matches by picking the closest amount without checking.
         if not is_known_pattern(order_amount, candidate["amount"]):
-            delta = candidate["amount"] - order_amount
-            sign = "+" if delta >= 0 else "-"
-            print(
-                f"\n  ⚠  This doesn't match a known pattern — "
-                f"Δ {sign}₹{abs(delta):.2f} is not exact, ~2% fee, or ≤₹1 rounding."
-            )
-            confirm = input("  Are you sure you want to confirm this? (y/n): ").strip().lower()
-            if confirm != "y":
-                print("  Aborted — re-enter your decision or say 'no' to reject.")
-                return "unclear"
+            if not confirm_unknown:
+                return "warning_required"
 
         try:
             supabase.table("reconciliation_state").update({
@@ -242,6 +232,24 @@ def review_batch(batch_id: str):
             response = input("  Your call (yes / yes <note> / 1-3 / no): ").strip()
             decision = parse_human_response(response, len(candidates))
             outcome = apply_decision(rec["id"], candidates, decision, response, order["amount"])
+            if outcome == "warning_required":
+                idx = decision["chosen_index"]
+                candidate = candidates[idx] if idx is not None and idx < len(candidates) else {}
+                delta = candidate.get("amount", 0.0) - order["amount"]
+                sign = "+" if delta >= 0 else "-"
+                print(
+                    f"\n  ⚠  This doesn't match a known pattern — "
+                    f"Δ {sign}₹{abs(delta):.2f} is not exact, ~2% fee, or ≤₹1 rounding."
+                )
+                confirm = input("  Are you sure you want to confirm this? (y/n): ").strip().lower()
+                if confirm == "y":
+                    outcome = apply_decision(
+                        rec["id"], candidates, decision, response, order["amount"], confirm_unknown=True
+                    )
+                else:
+                    print("  Aborted — re-enter your decision or say 'no' to reject.")
+                    outcome = "unclear"
+
             if outcome != "unclear":
                 print(f"  -> {outcome}\n")
                 break
