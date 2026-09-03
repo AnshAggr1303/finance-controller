@@ -60,7 +60,8 @@ def fetch_recon_rows(batch_id: str) -> list[dict]:
         supabase.table("reconciliation_state")
         .select(
             "id, order_row_id, bank_row_id, status, confidence, "
-            "raw_orders!order_row_id(order_id, true_match_id)"
+            "raw_orders!order_row_id(order_id, true_match_id), "
+            "raw_bank_statements!bank_row_id(true_match_id)"
         )
         .eq("batch_id", batch_id)
         .execute()
@@ -89,23 +90,31 @@ def classify_row(row: dict) -> str:
     """
     Returns one of: 'TP', 'FP', 'FN', 'TN'.
 
-    Logic mirrors the verification queries used throughout development:
-      - claimed (bank_row_id IS NOT NULL) and correct  -> TP
-      - claimed and wrong / spurious                   -> FP
-      - not claimed but should have been               -> FN
-      - not claimed, genuinely no match                -> TN
+    Correct comparison: both sides are the shared ground-truth UUID token
+    that the generator stamps on a matched order+bank pair. They are NOT
+    primary keys -- comparing bank_row_id (a PK) to true_match_id (a token)
+    would never equal even for correct matches.
+
+      TP -- agent claimed a bank row  AND  that bank row's true_match_id
+            equals the order's true_match_id  (same shared token -> correct pair)
+      FP -- agent claimed a bank row  AND  tokens differ (or order has no token)
+      FN -- agent made no claim       AND  order has a true_match_id (missed it)
+      TN -- agent made no claim       AND  order has no true_match_id (correct abstention)
     """
     order_info = row.get("raw_orders") or {}
-    true_match_id: str | None = order_info.get("true_match_id")
+    bank_info  = row.get("raw_bank_statements") or {}
+
+    order_token: str | None = order_info.get("true_match_id")
+    bank_token:  str | None = bank_info.get("true_match_id")   # None when no claim made
     claimed_bank_id: str | None = row.get("bank_row_id")
 
     if claimed_bank_id is not None:                     # agent made a claim
-        if true_match_id is not None and claimed_bank_id == true_match_id:
-            return "TP"
+        if order_token is not None and order_token == bank_token:
+            return "TP"                                  # tokens match -> correct pair
         else:
-            return "FP"                                  # wrong claim (or spurious)
+            return "FP"                                  # wrong bank row claimed
     else:                                               # agent did not claim
-        if true_match_id is not None:
+        if order_token is not None:
             return "FN"                                  # should have matched
         else:
             return "TN"                                  # correct abstention
