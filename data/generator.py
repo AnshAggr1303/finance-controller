@@ -109,6 +109,7 @@ def generate():
         match_id = str(uuid.uuid4())
         order_amount = round(random.uniform(500, 50000), 2)
         order_ts = random_datetime_within()
+        order_id = f"ORD-{fake.unique.random_number(digits=6)}"
 
         noise_type = random.choice(["fee", "rounding", "delay"])
         if noise_type == "fee":
@@ -124,7 +125,16 @@ def generate():
             bank_ts = order_ts + jittered_offset(0, 23, days=random.randint(1, 3))
             narration = "Delayed settlement"
 
-        orders.append(make_order(order_amount, order_ts, match_id))
+        # ~50% of the time, embed a real order ID reference in the
+        # narration -- exercises Node 3's regex extraction path with
+        # genuine signal, not just silent no-ops.
+        if random.random() < 0.5:
+            narration = f"{narration} Ref {order_id}"
+
+        order_row = make_order(order_amount, order_ts, match_id)
+        order_row["order_id"] = order_id  # keep in sync with the embedded reference
+        order_row["record_hash"] = record_hash(order_id, order_row["amount"], order_row["order_ts"])
+        orders.append(order_row)
         bank_rows.append(make_bank_row(bank_amount, bank_ts, match_id, narration))
 
     # --- Category 3: deceptive non-matches (false-positive traps) ---

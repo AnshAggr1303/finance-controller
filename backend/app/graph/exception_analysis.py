@@ -44,7 +44,11 @@ matched to a bank settlement using strict deterministic rules (exact amount,
 candidate bank rows below is still plausibly the true counterpart.
 
 The ONLY discrepancy patterns known to be legitimate in this system are:
-  1. A 2% gateway fee (bank amount = order amount x 0.98, allow ~0.5% slack)
+  1. A 2% gateway fee: the bank amount must equal order amount x 0.98,
+     within a strict tolerance of +/-0.1 percentage points (i.e. the
+     effective deduction must be between 1.9% and 2.1% of the order
+     amount). A deduction of 2.3% or 1.7% is NOT a fee match -- do not
+     round this tolerance up or treat "roughly 2%" as sufficient.
   2. A rounding difference of at most ~INR 1
   3. A multi-day settlement delay with the SAME amount as the order
   4. A transaction ID or customer reference explicitly present in the

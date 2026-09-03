@@ -133,3 +133,24 @@ def fetch_wide_candidates(order: dict, batch_id: str) -> list:
     )
     claimed = get_claimed_bank_ids(batch_id)
     return [r for r in rows if r["id"] not in claimed]
+
+def rank_candidates_for_review(order: dict, candidates: list, top_n: int = 3) -> list:
+    """Top-N candidates by amount closeness, serialized for storage/display.
+    Used when Node 5 can't auto-resolve -- gives a human real numbered
+    options instead of a single guess.
+    """
+    def diff(c):
+        return abs(c["amount"] - order["amount"])
+
+    ranked = sorted(candidates, key=diff)[:top_n]
+    out = []
+    for c in ranked:
+        settled_ts = c["settled_ts"]
+        out.append({
+            "bank_row_id": c["id"],
+            "txn_id": c["txn_id"],
+            "amount": c["amount"],
+            "settled_ts": settled_ts if isinstance(settled_ts, str) else settled_ts.isoformat(),
+            "narration": c["narration"],
+        })
+    return out
