@@ -162,6 +162,7 @@ function DashboardInner() {
               entries={summary.recent_audit_trail || []}
               batchLabel={summary.label}
               totalOrders={summary.total_orders ?? summary.order_count ?? 0}
+              batchId={activeBatchId}
             />
           </>
         )}

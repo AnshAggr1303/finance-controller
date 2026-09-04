@@ -1,4 +1,4 @@
-import { BatchListItem, BatchSummaryResponse } from "./types";
+import { BatchListItem, BatchSummaryResponse, MatchesResponse } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api";
 
@@ -26,4 +26,13 @@ export async function runBatch(batchId: string): Promise<void> {
   if (!res.ok) {
     throw new Error(`Failed to trigger batch run: ${res.status} ${res.statusText}`);
   }
+}
+
+export async function fetchBatchMatches(batchId: string): Promise<MatchesResponse> {
+  const url = `${API_BASE}/batches/${batchId}/matches`;
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch matched records: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
 }

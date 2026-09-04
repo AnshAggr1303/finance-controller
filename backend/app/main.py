@@ -8,6 +8,7 @@ Endpoints:
   - POST /batches/{id}/run: Execute two-pass batch reconciliation graph.
   - GET  /batches/{id}/exceptions: List records awaiting human review with candidates.
   - POST /batches/{id}/review/{reconciliation_id}: Submit a human review decision.
+  - GET  /batches/{id}/matches: Full list of matched order/bank-row pairs with audit detail.
 """
 
 import math
@@ -119,6 +120,31 @@ class ExceptionsResponse(BaseModel):
     batch_id: str
     exceptions_count: int
     exceptions: List[ExceptionItem]
+
+
+class MatchItem(BaseModel):
+    reconciliation_id: str
+    order_id: str
+    customer_ref: str
+    order_amount: float
+    currency: str
+    order_ts: Optional[str] = None
+    bank_txn_id: Optional[str] = None
+    bank_amount: Optional[float] = None
+    narration: Optional[str] = None
+    settled_ts: Optional[str] = None
+    delta: Optional[float] = None
+    decision_type: Optional[str] = None
+    match_subtype: Optional[str] = None
+    confidence: Optional[float] = None
+    reasoning: Optional[str] = None
+    matched_at: Optional[str] = None
+
+
+class MatchesResponse(BaseModel):
+    batch_id: str
+    matches_count: int
+    matches: List[MatchItem]
 
 
 class ReviewDecisionRequest(BaseModel):
@@ -506,6 +532,111 @@ def get_batch_exceptions(id: str):
         exceptions_count=len(exceptions_list),
         exceptions=exceptions_list,
     )
+
+
+@app.get("/batches/{id}/matches", response_model=MatchesResponse)
+def get_batch_matches(id: str):
+    """Full list of matched order/bank-row pairs for a batch, with audit detail.
+
+    `/summary`'s recent_audit_trail is capped at 20 entries and mixes in
+    exceptions, so it isn't sufficient for a dedicated Matched Records view —
+    this queries reconciliation_state directly for every `matched` row.
+    """
+    batch = supabase.table("batches").select("id").eq("id", id).execute().data
+    if not batch:
+        raise HTTPException(status_code=404, detail=f"Batch {id} not found")
+
+    try:
+        recon_rows = (
+            supabase.table("reconciliation_state")
+            .select(
+                "id, raw_orders(order_id, amount, currency, order_ts, customer_ref), "
+                "raw_bank_statements(txn_id, amount, narration, settled_ts)"
+            )
+            .eq("batch_id", id)
+            .eq("status", "matched")
+            .execute()
+            .data
+            or []
+        )
+
+        # Latest audit_trail entry per reconciliation_id carries the terminal
+        # decision (a record resolved via human review after an exception has
+        # two entries: exception_flag then human_override — take the newer one).
+        audit_rows = (
+            supabase.table("audit_trail")
+            .select(
+                "reconciliation_id, decision_type, confidence, reasoning, created_at, "
+                "reconciliation_state!inner(batch_id)"
+            )
+            .eq("reconciliation_state.batch_id", id)
+            .order("created_at", desc=False)
+            .execute()
+            .data
+            or []
+        )
+        latest_audit_by_recon: Dict[str, Dict[str, Any]] = {}
+        for a in audit_rows:
+            latest_audit_by_recon[a["reconciliation_id"]] = a
+
+        matches: List[MatchItem] = []
+        for rec in recon_rows:
+            order = rec.get("raw_orders") or {}
+            bank = rec.get("raw_bank_statements") or {}
+            if not order:
+                continue
+            order_amount = float(order["amount"])
+            bank_amount = float(bank["amount"]) if bank.get("amount") is not None else None
+            audit = latest_audit_by_recon.get(rec["id"], {})
+            decision_type = audit.get("decision_type")
+
+            # Sub-label for the filter chips — mirrors Figma's Exact/~2% Fee/
+            # Rounding/ID Reference/Gemini LLM split. Reuses the *same*
+            # is_known_pattern/_pattern_label helpers the human-review gate
+            # uses, so this is never a second, drifting classification.
+            if decision_type == "deterministic_match" and bank_amount is not None:
+                match_subtype = _pattern_label(order_amount, bank_amount)
+            elif decision_type == "id_reference_match":
+                match_subtype = "ID Reference"
+            elif decision_type == "llm_match":
+                match_subtype = "Gemini LLM"
+            elif decision_type == "human_override":
+                match_subtype = "Human Override"
+            else:
+                match_subtype = None
+
+            matches.append(
+                MatchItem(
+                    reconciliation_id=rec["id"],
+                    order_id=order["order_id"],
+                    customer_ref=order.get("customer_ref", ""),
+                    order_amount=order_amount,
+                    currency=order.get("currency", "INR"),
+                    order_ts=str(order.get("order_ts", "")) or None,
+                    bank_txn_id=bank.get("txn_id"),
+                    bank_amount=bank_amount,
+                    narration=bank.get("narration"),
+                    settled_ts=str(bank.get("settled_ts", "")) or None,
+                    delta=round(bank_amount - order_amount, 2) if bank_amount is not None else None,
+                    decision_type=decision_type,
+                    match_subtype=match_subtype,
+                    confidence=float(audit["confidence"]) if audit.get("confidence") is not None else None,
+                    reasoning=audit.get("reasoning"),
+                    matched_at=str(audit.get("created_at", "")) or None,
+                )
+            )
+
+        matches.sort(key=lambda m: (m.confidence is None, -(m.confidence or 0)))
+
+        return MatchesResponse(
+            batch_id=id,
+            matches_count=len(matches),
+            matches=matches,
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to fetch matched records: {str(e)}")
 
 
 @app.post("/batches/{id}/review/{reconciliation_id}", response_model=ReviewDecisionResponse)

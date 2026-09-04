@@ -161,6 +161,12 @@ export function BatchesTable({
                     {/* Action */}
                     <td className="py-3 px-4 text-right whitespace-nowrap">
                       <Link
+                        href={`/batches/${batch.id}/matches`}
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-on-surface-variant hover:text-primary transition-colors cursor-pointer mr-3"
+                      >
+                        <span>Matched</span>
+                      </Link>
+                      <Link
                         href={`/?batch=${batch.id}`}
                         className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:text-primary-container transition-colors cursor-pointer"
                       >

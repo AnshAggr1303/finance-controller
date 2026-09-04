@@ -10,12 +10,14 @@ interface AuditTrailTableProps {
   entries: AuditTrailSummaryItem[];
   batchLabel: string;
   totalOrders: number;
+  batchId?: string;
 }
 
 export function AuditTrailTable({
   entries,
   batchLabel,
   totalOrders,
+  batchId,
 }: AuditTrailTableProps) {
   // Decision badge styling helper
   const getDecisionBadge = (decisionType: string) => {
@@ -207,7 +209,7 @@ export function AuditTrailTable({
           Showing {entries.length} recent entries from {batchLabel} ({totalOrders} total orders)
         </span>
         <Link
-          href="/batches"
+          href={batchId ? `/batches/${batchId}/matches` : "/batches"}
           className="text-xs font-semibold text-primary hover:underline flex items-center gap-1 cursor-pointer"
         >
           <span>View All Transactions</span>

@@ -37,6 +37,31 @@ export interface BatchSummaryResponse {
   recent_audit_trail: AuditTrailSummaryItem[];
 }
 
+export interface MatchItem {
+  reconciliation_id: string;
+  order_id: string;
+  customer_ref: string;
+  order_amount: number;
+  currency: string;
+  order_ts?: string | null;
+  bank_txn_id?: string | null;
+  bank_amount?: number | null;
+  narration?: string | null;
+  settled_ts?: string | null;
+  delta?: number | null;
+  decision_type?: string | null;
+  match_subtype?: string | null;
+  confidence?: number | null;
+  reasoning?: string | null;
+  matched_at?: string | null;
+}
+
+export interface MatchesResponse {
+  batch_id: string;
+  matches_count: number;
+  matches: MatchItem[];
+}
+
 export interface BatchListItem {
   id: string;
   batch_id: string;
