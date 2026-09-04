@@ -114,12 +114,14 @@ microsecond fingerprints as false match signal.
 Had a real bug (compared a bank row's own PK against a ground-truth
 token instead of comparing both rows' tokens) — fixed, reverified 35/0/0/15.
 
-## FastAPI layer (`backend/app/main.py`) — all 6 endpoints built & verified
+## FastAPI layer (`backend/app/main.py`) — all 7 endpoints built & verified
 
 `POST /batches`, `POST /batches/{id}/run`, `GET /batches/{id}/exceptions`,
 `POST /batches/{id}/review/{reconciliation_id}`, `GET /batches` (list with
 summary stats), `GET /batches/{id}/summary` (dashboard aggregates:
-counts, settled amount, pipeline breakdown, recent audit trail). All
+counts, settled amount, pipeline breakdown, recent audit trail),
+`GET /batches/{id}/matches` (full matched-records list for the Matched
+Records screen). All
 reuse existing verified logic rather than reimplementing it.
 
 ## Frontend (Next.js) — IN PROGRESS
@@ -147,14 +149,27 @@ self-hosted SVGs instead.
 - Re-trigger button — wired to `POST /batches/{id}/run`, disabled with
   tooltip when `status === 'completed'`, separate from Refresh. See
   section above for verification evidence.
+- Matched Records (`1:826`) — `recent_audit_trail` from `/summary` was
+  NOT sufficient (capped at 20, mixes in exceptions), so added a
+  dedicated `GET /batches/{id}/matches` querying reconciliation_state
+  directly for every `status=matched` row. Figma's fabricated fields
+  (GST numbers, merchant IDs, company names) do not exist in our
+  schema and were not reproduced; the Exact/~2% Fee/Rounding/ID
+  Reference/Gemini LLM filter chips ARE real, reusing
+  `human_review.py`'s existing `_pattern_label`/`is_known_pattern`
+  rather than a second classification. Verified: `data/scoring.py`
+  35 TP/0 FP/0 FN, `/matches` independently returns 35 with a 23+2+2+8
+  subtype breakdown summing to the already-verified 27/8 deterministic/
+  id-reference split; live in-browser screenshot, filter/search/row-
+  expansion all confirmed against real data with no console errors;
+  both navigation entry points (Batches list, Dashboard's "View All
+  Transactions" — previously dead-ended at `/batches`) land correctly.
 
-**Not yet built:** Matched Records (`1:826` — check whether
-`recent_audit_trail` from `/summary` is sufficient or a dedicated
-endpoint returning the FULL matched list is needed), Exception Review
-Queue (`1:1670` — preserve the two-step pattern-warning confirm exactly,
-real behavioral logic, wire to `GET /batches/{id}/exceptions` and
-`POST /batches/{id}/review/{id}`), Scorecard (`1:1265` — wire to
-`scoring.py`'s output or a dedicated endpoint).
+**Not yet built:** Exception Review Queue (`1:1670` — preserve the
+two-step pattern-warning confirm exactly, real behavioral logic, wire
+to `GET /batches/{id}/exceptions` and `POST /batches/{id}/review/{id}`),
+Scorecard (`1:1265` — wire to `scoring.py`'s output or a dedicated
+endpoint).
 
 ## Verified results (ground-truth checked via SQL, never eyeballed)
 
@@ -171,12 +186,13 @@ live demo.
 
 **Built & verified:** schema + RLS + unique constraint, data generator,
 all 5 graph nodes, two-pass orchestration, human review CLI + API path
-with pattern-warning hardening, scoring script, all 6 FastAPI endpoints,
-Figma design (reviewed/corrected), shared layout shell, Dashboard
-screen, Batches List screen, Re-trigger button wiring.
+with pattern-warning hardening, scoring script, all 7 FastAPI endpoints
+(added `GET /batches/{id}/matches`), Figma design (reviewed/corrected),
+shared layout shell, Dashboard screen, Batches List screen, Re-trigger
+button wiring, Matched Records screen.
 
-**Not yet built:** Matched Records screen, Exception Review Queue screen,
-Scorecard screen, deployment.
+**Not yet built:** Exception Review Queue screen, Scorecard screen,
+deployment.
 
 ## Working conventions established so far
 
