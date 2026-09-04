@@ -138,11 +138,17 @@ def apply_decision(
                 return "warning_required"
 
         try:
-            supabase.table("reconciliation_state").update({
-                "bank_row_id": candidate["bank_row_id"],
-                "status": "matched",
-                "confidence": 1.0,
-            }).eq("id", reconciliation_id).execute()
+            update_res = (
+                supabase.table("reconciliation_state")
+                .update({
+                    "bank_row_id": candidate["bank_row_id"],
+                    "status": "matched",
+                    "confidence": 1.0,
+                })
+                .eq("id", reconciliation_id)
+                .eq("status", "exception")
+                .execute()
+            )
         except Exception as e:
             if "duplicate key value violates unique constraint" in str(e):
                 print(
@@ -151,6 +157,10 @@ def apply_decision(
                 )
                 return "unclear"
             raise
+
+        if not update_res.data:
+            print("  Record status is no longer 'exception' -- decision skipped.")
+            return "already_reviewed"
 
         reasoning = f"Human confirmed match to {candidate['txn_id']}"
         if decision["correction_note"]:
@@ -173,9 +183,19 @@ def apply_decision(
         return "matched"
 
     if decision["action"] == "reject":
-        supabase.table("reconciliation_state").update({
-            "status": "rejected",
-        }).eq("id", reconciliation_id).execute()
+        update_res = (
+            supabase.table("reconciliation_state")
+            .update({
+                "status": "rejected",
+            })
+            .eq("id", reconciliation_id)
+            .eq("status", "exception")
+            .execute()
+        )
+
+        if not update_res.data:
+            print("  Record status is no longer 'exception' -- decision skipped.")
+            return "already_reviewed"
 
         supabase.table("audit_trail").insert({
             "reconciliation_id": reconciliation_id,

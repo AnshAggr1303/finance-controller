@@ -83,26 +83,33 @@ def matcher_node(state: ReconState) -> ReconState:
         decision_type = "deterministic_match"
 
     if bank_row and reasoning:
-        supabase.table("reconciliation_state").update({
-            "bank_row_id": bank_row["id"],
-            "status": "matched",
-            "confidence": 1.0,
-        }).eq("id", reconciliation_id).execute()
+        update_res = (
+            supabase.table("reconciliation_state")
+            .update({
+                "bank_row_id": bank_row["id"],
+                "status": "matched",
+                "confidence": 1.0,
+            })
+            .eq("id", reconciliation_id)
+            .eq("status", "pending")
+            .execute()
+        )
 
-        supabase.table("audit_trail").insert({
-            "reconciliation_id": reconciliation_id,
-            "node_name": "matcher",
-            "decision_type": decision_type,
-            "reasoning": reasoning,
-            "confidence": 1.0,
-        }).execute()
+        if update_res.data:
+            supabase.table("audit_trail").insert({
+                "reconciliation_id": reconciliation_id,
+                "node_name": "matcher",
+                "decision_type": decision_type,
+                "reasoning": reasoning,
+                "confidence": 1.0,
+            }).execute()
 
         return {
             **state,
             "bank_row": bank_row,
             "match_result": {"reasoning": reasoning, "decision_type": decision_type},
             "current_node": "resolved",
-            "status": "matched",
+            "status": "matched" if update_res.data else "skipped",
         }
 
     # No deterministic match -- expected for genuine non-matches.
@@ -124,30 +131,47 @@ def exception_analyzer_node(state: ReconState) -> ReconState:
     verdict = analyze_exception(order, candidates)
 
     if verdict.is_match and verdict.confidence >= CONFIDENCE_THRESHOLD and verdict.matched_bank_row_id:
-        supabase.table("reconciliation_state").update({
-            "bank_row_id": verdict.matched_bank_row_id,
-            "status": "matched",
-            "confidence": verdict.confidence,
-        }).eq("id", reconciliation_id).execute()
+        update_res = (
+            supabase.table("reconciliation_state")
+            .update({
+                "bank_row_id": verdict.matched_bank_row_id,
+                "status": "matched",
+                "confidence": verdict.confidence,
+            })
+            .eq("id", reconciliation_id)
+            .eq("status", "pending")
+            .execute()
+        )
         decision_type = "llm_match"
         final_status = "matched"
     else:
         review_candidates = rank_candidates_for_review(order, candidates)
-        supabase.table("reconciliation_state").update({
-            "status": "exception",
-            "confidence": verdict.confidence,
-            "review_candidates": review_candidates,
-        }).eq("id", reconciliation_id).execute()
+        update_res = (
+            supabase.table("reconciliation_state")
+            .update({
+                "status": "exception",
+                "confidence": verdict.confidence,
+                "review_candidates": review_candidates,
+            })
+            .eq("id", reconciliation_id)
+            .eq("status", "pending")
+            .execute()
+        )
         decision_type = "exception_flag"
         final_status = "exception"
 
-    supabase.table("audit_trail").insert({
-        "reconciliation_id": reconciliation_id,
-        "node_name": "exception_analyzer",
-        "decision_type": decision_type,
-        "reasoning": verdict.reasoning,
-        "confidence": verdict.confidence,
-    }).execute()
+    # Guard: only write audit_trail if the status was still pending and updated
+    if update_res.data:
+        supabase.table("audit_trail").insert({
+            "reconciliation_id": reconciliation_id,
+            "node_name": "exception_analyzer",
+            "decision_type": decision_type,
+            "reasoning": verdict.reasoning,
+            "confidence": verdict.confidence,
+        }).execute()
+    else:
+        # The record moved on before this update (e.g. human review or concurrent run)
+        final_status = "skipped"
 
     return {
         **state,

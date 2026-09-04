@@ -92,6 +92,21 @@ def fetch_pass2_candidates(batch_id: str) -> list:
 
 
 def run_pass2_for_record(rec: dict, batch_id: str) -> tuple:
+    # Pre-check guard: if status has already moved on from 'pending', skip LLM reasoning entirely
+    current_rec = (
+        supabase.table("reconciliation_state")
+        .select("status")
+        .eq("id", rec["id"])
+        .single()
+        .execute()
+        .data
+    )
+    if not current_rec or current_rec.get("status") != "pending":
+        return rec.get("id", "unknown"), {
+            "status": current_rec.get("status") if current_rec else "skipped",
+            "current_node": "resolved",
+        }
+
     order = (
         supabase.table("raw_orders")
         .select("id, order_id, amount, currency, order_ts, customer_ref")
@@ -112,10 +127,11 @@ def run_pass2_for_record(rec: dict, batch_id: str) -> tuple:
     }
     final_state = exception_analyzer_node(state)
 
-    supabase.table("reconciliation_state").update({
-        "current_node": final_state.get("current_node"),
-        "status": final_state.get("status"),
-    }).eq("id", rec["id"]).execute()
+    if final_state.get("status") != "skipped":
+        supabase.table("reconciliation_state").update({
+            "current_node": final_state.get("current_node"),
+            "status": final_state.get("status"),
+        }).eq("id", rec["id"]).eq("status", "pending").execute()
 
     return order["order_id"], final_state
 

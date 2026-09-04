@@ -575,6 +575,12 @@ def submit_review_decision(
             ),
         )
 
+    if outcome == "already_reviewed":
+        raise HTTPException(
+            status_code=409,
+            detail="Record has already been reviewed or status is no longer 'exception'.",
+        )
+
     if outcome == "unclear":
         raise HTTPException(
             status_code=400,
