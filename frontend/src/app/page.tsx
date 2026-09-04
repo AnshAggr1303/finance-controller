@@ -7,7 +7,7 @@ import { OperationalHeader } from "@/components/dashboard/OperationalHeader";
 import { MetricsCards } from "@/components/dashboard/MetricsCards";
 import { PipelineArchitecture } from "@/components/dashboard/PipelineArchitecture";
 import { AuditTrailTable } from "@/components/dashboard/AuditTrailTable";
-import { fetchBatchSummary, fetchBatches } from "@/lib/api";
+import { fetchBatchSummary, fetchBatches, runBatch } from "@/lib/api";
 import { BatchSummaryResponse, BatchListItem } from "@/lib/types";
 import { AlertCircle, Loader2 } from "lucide-react";
 
@@ -23,6 +23,7 @@ function DashboardInner() {
   const [summary, setSummary] = useState<BatchSummaryResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [isRetriggering, setIsRetriggering] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   // Sync if query param changes
@@ -67,6 +68,21 @@ function DashboardInner() {
     loadData(activeBatchId, false);
   };
 
+  const handleRetrigger = async () => {
+    if (summary?.status === "completed") return;
+    setIsRetriggering(true);
+    setError(null);
+    try {
+      await runBatch(activeBatchId);
+      await loadData(activeBatchId, false);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to trigger batch run";
+      setError(msg);
+    } finally {
+      setIsRetriggering(false);
+    }
+  };
+
   const handleSelectBatch = (id: string) => {
     setActiveBatchId(id);
   };
@@ -84,10 +100,13 @@ function DashboardInner() {
           currentBatchId={activeBatchId}
           currentBatchLabel={summary?.label || "frontend-integration-test"}
           batchCreatedAt={summary?.created_at}
+          batchStatus={summary?.status}
           batches={batches}
           onSelectBatch={handleSelectBatch}
           onRefresh={handleRefresh}
           isRefreshing={isRefreshing}
+          onRetrigger={handleRetrigger}
+          isRetriggering={isRetriggering}
         />
 
         {/* Error Alert */}

@@ -1,28 +1,35 @@
 "use client";
 
 import React from "react";
-import { Calendar, SlidersHorizontal, Download, RefreshCw, ChevronDown } from "lucide-react";
+import { Calendar, SlidersHorizontal, Download, RefreshCw, PlayCircle, ChevronDown } from "lucide-react";
 import { BatchListItem } from "@/lib/types";
 
 interface OperationalHeaderProps {
   currentBatchId: string;
   currentBatchLabel: string;
   batchCreatedAt?: string;
+  batchStatus?: string;
   batches?: BatchListItem[];
   onSelectBatch?: (id: string) => void;
   onRefresh?: () => void;
   isRefreshing?: boolean;
+  onRetrigger?: () => void;
+  isRetriggering?: boolean;
 }
 
 export function OperationalHeader({
   currentBatchId,
   currentBatchLabel,
   batchCreatedAt,
+  batchStatus,
   batches = [],
   onSelectBatch,
   onRefresh,
   isRefreshing = false,
+  onRetrigger,
+  isRetriggering = false,
 }: OperationalHeaderProps) {
+  const isCompleted = batchStatus === "completed";
   // Format batch date or default
   const dateDisplay = batchCreatedAt
     ? new Date(batchCreatedAt).toLocaleDateString("en-US", {
@@ -97,7 +104,27 @@ export function OperationalHeader({
           <span>Export</span>
         </button>
 
-        {/* Re-trigger / Refresh Button */}
+        {/* Re-trigger Button — reruns the reconciliation pipeline via POST /batches/{id}/run */}
+        <button
+          type="button"
+          onClick={onRetrigger}
+          disabled={isCompleted || isRetriggering}
+          title={
+            isCompleted
+              ? "Batch already completed — re-trigger disabled"
+              : "Re-run the reconciliation pipeline for this batch"
+          }
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors shadow-xs text-xs font-semibold ${
+            isCompleted || isRetriggering
+              ? "bg-surface-container-high text-on-surface-variant/50 cursor-not-allowed"
+              : "bg-secondary text-on-secondary hover:bg-secondary-container cursor-pointer"
+          }`}
+        >
+          <PlayCircle className={`w-3.5 h-3.5 ${isRetriggering ? "animate-spin" : ""}`} />
+          <span>Re-trigger</span>
+        </button>
+
+        {/* Refresh Button — re-fetches the current batch summary via GET */}
         <button
           type="button"
           onClick={onRefresh}

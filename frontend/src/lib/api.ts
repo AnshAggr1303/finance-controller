@@ -19,3 +19,11 @@ export async function fetchBatches(): Promise<BatchListItem[]> {
   }
   return res.json();
 }
+
+export async function runBatch(batchId: string): Promise<void> {
+  const url = `${API_BASE}/batches/${batchId}/run`;
+  const res = await fetch(url, { method: "POST" });
+  if (!res.ok) {
+    throw new Error(`Failed to trigger batch run: ${res.status} ${res.statusText}`);
+  }
+}
