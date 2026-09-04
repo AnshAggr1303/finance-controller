@@ -6,6 +6,12 @@
   the true_match_id ground truth via SQL before being considered done —
   never trust aggregate counts alone, always check individual pair
   correctness. Show me the verification query and its result.
+- For frontend/design tasks, pull real design context directly via Figma's
+  MCP tools (get_metadata, get_screenshot, get_design_context) against the
+  file/node IDs in docs/PROJECT_STATUS.md — do not work from a secondhand
+  description of a screen. Once a screen is wired up, verify it against a
+  REAL running batch through the real API (screenshot showing real data),
+  not the Figma mockup's illustrative data.
 - Prefer editing existing files over rewriting from scratch for small changes.
 - After finishing a task: run it, verify it, then git commit with a message
   describing what changed AND what was verified.
