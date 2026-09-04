@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { Shell } from "@/components/layout/Shell";
 import { OperationalHeader } from "@/components/dashboard/OperationalHeader";
 import { MetricsCards } from "@/components/dashboard/MetricsCards";
@@ -13,13 +14,23 @@ import { AlertCircle, Loader2 } from "lucide-react";
 // Ground-truth verified batch for frontend integration
 const DEFAULT_BATCH_ID = "9c75a7ac-b6ca-41fc-84b2-714b5204b20c";
 
-export default function DashboardPage() {
-  const [activeBatchId, setActiveBatchId] = useState<string>(DEFAULT_BATCH_ID);
+function DashboardInner() {
+  const searchParams = useSearchParams();
+  const queryBatchId = searchParams.get("batch");
+
+  const [activeBatchId, setActiveBatchId] = useState<string>(queryBatchId || DEFAULT_BATCH_ID);
   const [batches, setBatches] = useState<BatchListItem[]>([]);
   const [summary, setSummary] = useState<BatchSummaryResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Sync if query param changes
+  useEffect(() => {
+    if (queryBatchId && queryBatchId !== activeBatchId) {
+      setActiveBatchId(queryBatchId);
+    }
+  }, [queryBatchId, activeBatchId]);
 
   // Load batch summary
   const loadData = useCallback(async (batchId: string, showSpinner = true) => {
@@ -89,7 +100,7 @@ export default function DashboardPage() {
             </div>
             <button
               onClick={handleRefresh}
-              className="ml-auto underline font-semibold hover:opacity-80"
+              className="ml-auto underline font-semibold hover:opacity-80 cursor-pointer"
             >
               Retry
             </button>
@@ -137,5 +148,19 @@ export default function DashboardPage() {
         )}
       </div>
     </Shell>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-surface flex items-center justify-center">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      }
+    >
+      <DashboardInner />
+    </Suspense>
   );
 }

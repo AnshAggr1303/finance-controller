@@ -176,16 +176,17 @@ order counts (~50/batch), accurate plain-language pipeline description.
 **Frontend integration in progress:**
 - ✓ (1) Shared layout shell built & verified (left sidebar with Dashboard, Batches, Exception Review, Scorecard; top bar with active batch label, status badge, search, Run New Batch CTA).
 - ✓ (2) Dashboard screen (`1:6`) built & verified against real running batch `9c75a7ac-b6ca-41fc-84b2-714b5204b20c` via `GET /batches/{id}/summary`. ₹ glyph font issue fixed (Inter & JetBrains Mono with tabular numerals). "Export" button disabled as specified.
-- Next: (3) Batches List (`1:432`), (4) Matched Records (`1:826`), (5) Exception Review Queue (`1:1670`), (6) Scorecard (`1:1265`).
+- ✓ (3) Batches List screen (`1:432`) built & verified against real database records via `GET /batches`. Search, status filter, summary stats chips, active batch highlight, and "Inspect" jump to dashboard working.
+- Next: (4) Matched Records (`1:826`), (5) Exception Review Queue (`1:1670`), (6) Scorecard (`1:1265`).
 
 ## What's built and verified vs. not yet started
 
 **Built & verified:** schema + RLS + unique constraint, data generator,
 all 5 graph nodes, two-pass orchestration, human review CLI with
 pattern-warning hardening, scoring script, all 6 FastAPI endpoints,
-Figma design (reviewed and corrected), shared layout shell, Dashboard screen (`1:6`) verified against batch `9c75a7ac-...`.
+Figma design (reviewed and corrected), shared layout shell, Dashboard screen (`1:6`), Batches List screen (`1:432`) verified against real database batches.
 
-**Not yet built:** screens 3–6 (Batches List, Matched Records, Exception Review Queue, Scorecard), deployment.
+**Not yet built:** screens 4–6 (Matched Records, Exception Review Queue, Scorecard), deployment.
 
 ## Working conventions established so far
 
