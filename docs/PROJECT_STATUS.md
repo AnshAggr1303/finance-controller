@@ -113,7 +113,7 @@ adding an FK expansion to fetch the claimed bank row's own
 Reverified: TP=35, FP=0, FN=0, TN=15, matching prior hand-verification
 exactly.
 
-## FastAPI layer (`backend/app/main.py`) -- built & verified, INCOMPLETE
+## FastAPI layer (`backend/app/main.py`) -- built & verified, COMPLETE
 
 Reuses existing verified logic rather than reimplementing it:
 `push_to_db.clean_record` for NaN handling, `parse_human_response` /
@@ -121,8 +121,10 @@ Reuses existing verified logic rather than reimplementing it:
 `run_pass1_for_order` / `run_pass2_for_record` from `run_batch.py` for
 orchestration.
 
-**Endpoints that exist and are verified:**
+**Endpoints that exist and are verified (all 6 needed endpoints):**
+- `GET /batches` -- list all batches with label, order count, matched/exception/rejected/pending counts, match rate, and running/completed status
 - `POST /batches` -- generate + push a new dataset
+- `GET /batches/{id}/summary` -- aggregate counts (total orders, matched/exception/rejected/pending counts, match rate, status), total settled amount, pipeline-stage breakdown by decision_type from audit_trail, and 20 most recent audit_trail entries
 - `POST /batches/{id}/run` -- two-pass reconciliation
 - `GET /batches/{id}/exceptions` -- list pending review records with
   ranked candidates, delta, and pattern label per candidate
@@ -134,16 +136,6 @@ Full end-to-end API test (fresh batch, create -> run -> exceptions ->
 review -> scoring, entirely through the API): TP=35, FP=0, FN=0, TN=15,
 precision/recall 1.0.
 
-**GAP -- two endpoints are MISSING and needed before the frontend can work:**
-- No `GET /batches` (list all batches with summary stats) -- needed for
-  the Batches List screen.
-- No `GET /batches/{id}/summary` (aggregate counts: total/matched/
-  exception/rejected, pipeline-stage breakdown by decision_type, recent
-  audit trail activity) -- needed for the Dashboard screen.
-
-These should be the FIRST task in a new session before any frontend
-screen work, since two of the five Figma screens have nothing to render
-without them.
 
 ## Verified results (ground-truth checked via SQL, never eyeballed)
 
@@ -197,12 +189,11 @@ batch (screenshot showing real API data) before moving to the next.
 **Built & verified:** schema + RLS + unique constraint, data generator
 with controlled categories + ground truth, all 5 graph nodes, two-pass
 orchestration, human review CLI with pattern-warning hardening, scoring
-script, FastAPI layer (4 of 6 needed endpoints), Figma design (5
+script, FastAPI layer (all 6 needed endpoints), Figma design (5
 screens, reviewed and corrected), git repo with commit history.
 
-**Not yet built:** the 2 missing backend endpoints (see FastAPI section
-above), all Next.js frontend code, deployment (GitHub is up; Hugging
-Face/Vercel have not happened).
+**Not yet built:** all Next.js frontend code, deployment (GitHub is up;
+Hugging Face/Vercel have not happened).
 
 ## Working conventions established so far
 

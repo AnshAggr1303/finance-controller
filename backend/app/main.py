@@ -2,7 +2,9 @@
 FastAPI application wrapping the finance controller batch orchestration:
 
 Endpoints:
+  - GET  /batches: List all batches with summary stats and status.
   - POST /batches: Generate a dataset and push to Supabase as a new batch.
+  - GET  /batches/{id}/summary: Summary metrics, pipeline stage breakdown, and recent audit activity.
   - POST /batches/{id}/run: Execute two-pass batch reconciliation graph.
   - GET  /batches/{id}/exceptions: List records awaiting human review with candidates.
   - POST /batches/{id}/review/{reconciliation_id}: Submit a human review decision.
@@ -14,18 +16,22 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+
+# Load backend/.env before importing data modules that expect env vars
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 # Ensure repo root is on sys.path for data.generator import
 REPO_ROOT = str(Path(__file__).resolve().parents[2])
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
+from app.db import supabase
 import data.generator as generator
 import data.push_to_db as push_to_db
-from app.db import supabase
 from app.graph.human_review import (
     _pattern_label,
     apply_decision,
@@ -127,11 +133,113 @@ class ReviewDecisionResponse(BaseModel):
     message: Optional[str] = None
 
 
+class BatchListItem(BaseModel):
+    id: str
+    batch_id: str
+    label: str
+    created_at: str
+    order_count: int
+    matched_count: int
+    exception_count: int
+    rejected_count: int
+    pending_count: int
+    match_rate: float
+    match_rate_pct: float
+    status: str
+
+
+class AuditTrailSummaryItem(BaseModel):
+    id: str
+    reconciliation_id: str
+    node_name: str
+    decision_type: str
+    order_id: Optional[str] = None
+    txn_id: Optional[str] = None
+    amount: Optional[float] = None
+    confidence: Optional[float] = None
+    reasoning: Optional[str] = None
+    created_at: Optional[str] = None
+
+
+class BatchSummaryResponse(BaseModel):
+    batch_id: str
+    id: str
+    label: str
+    created_at: str
+    status: str
+    total_orders: int
+    order_count: int
+    matched_count: int
+    exception_count: int
+    rejected_count: int
+    pending_count: int
+    match_rate: float
+    match_rate_pct: float
+    total_settled_amount: float
+    pipeline_breakdown: Dict[str, int]
+    recent_audit_trail: List[AuditTrailSummaryItem]
+
+
 # ── Routes ───────────────────────────────────────────────────────────────────
 
 @app.get("/")
 def health_check():
     return {"status": "ok", "service": "Finance Controller API"}
+
+
+@app.get("/batches", response_model=List[BatchListItem])
+def list_batches():
+    """List all batches with summary metrics (order count, match counts, match rate, status)."""
+    try:
+        res = (
+            supabase.table("batches")
+            .select("id, label, created_at, raw_orders(id), reconciliation_state(status)")
+            .order("created_at", desc=True)
+            .execute()
+        )
+        batches_data = res.data or []
+        items: List[BatchListItem] = []
+
+        for b in batches_data:
+            batch_id = b["id"]
+            orders = b.get("raw_orders") or []
+            recons = b.get("reconciliation_state") or []
+            order_count = len(orders)
+            matched = sum(1 for r in recons if r.get("status") == "matched")
+            exception = sum(1 for r in recons if r.get("status") == "exception")
+            rejected = sum(1 for r in recons if r.get("status") == "rejected")
+            pending = sum(1 for r in recons if r.get("status") == "pending") + max(0, order_count - len(recons))
+
+            match_rate = round(matched / order_count, 4) if order_count > 0 else 0.0
+            match_rate_pct = round(match_rate * 100, 2)
+
+            if order_count > 0 and len(recons) >= order_count and pending == 0:
+                status = "completed"
+            elif len(recons) > 0 or pending > 0:
+                status = "running"
+            else:
+                status = "pending"
+
+            items.append(
+                BatchListItem(
+                    id=batch_id,
+                    batch_id=batch_id,
+                    label=b.get("label") or "Unnamed Batch",
+                    created_at=str(b.get("created_at", "")),
+                    order_count=order_count,
+                    matched_count=matched,
+                    exception_count=exception,
+                    rejected_count=rejected,
+                    pending_count=pending,
+                    match_rate=match_rate,
+                    match_rate_pct=match_rate_pct,
+                    status=status,
+                )
+            )
+
+        return items
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list batches: {str(e)}")
 
 
 @app.post("/batches", response_model=CreateBatchResponse)
@@ -202,6 +310,138 @@ def run_batch(id: str):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Batch run failed: {str(e)}")
+
+
+@app.get("/batches/{id}/summary", response_model=BatchSummaryResponse)
+def get_batch_summary(id: str):
+    """Return aggregate counts, settled amount, pipeline-stage breakdown, and 20 recent audit entries."""
+    # 1. Verify batch exists
+    batch_res = (
+        supabase.table("batches")
+        .select("id, label, created_at")
+        .eq("id", id)
+        .execute()
+    )
+    if not batch_res.data:
+        raise HTTPException(status_code=404, detail=f"Batch {id} not found")
+
+    batch = batch_res.data[0]
+
+    try:
+        # 2. Total orders in this batch
+        orders_res = supabase.table("raw_orders").select("id").eq("batch_id", id).execute()
+        total_orders = len(orders_res.data or [])
+
+        # 3. Reconciliation state records with matched bank amount for settlement
+        recon_res = (
+            supabase.table("reconciliation_state")
+            .select("id, status, raw_bank_statements(amount)")
+            .eq("batch_id", id)
+            .execute()
+        )
+        recons = recon_res.data or []
+        matched_cnt = sum(1 for r in recons if r.get("status") == "matched")
+        exception_cnt = sum(1 for r in recons if r.get("status") == "exception")
+        rejected_cnt = sum(1 for r in recons if r.get("status") == "rejected")
+        pending_cnt = sum(1 for r in recons if r.get("status") == "pending") + max(0, total_orders - len(recons))
+
+        total_settled = sum(
+            float(r["raw_bank_statements"]["amount"])
+            for r in recons
+            if r.get("status") == "matched"
+            and r.get("raw_bank_statements")
+            and r["raw_bank_statements"].get("amount") is not None
+        )
+
+        match_rate = round(matched_cnt / total_orders, 4) if total_orders > 0 else 0.0
+        match_rate_pct = round(match_rate * 100, 2)
+
+        if total_orders > 0 and len(recons) >= total_orders and pending_cnt == 0:
+            status = "completed"
+        elif len(recons) > 0 or pending_cnt > 0:
+            status = "running"
+        else:
+            status = "pending"
+
+        # 4. Pipeline-stage breakdown by decision_type from audit_trail
+        audits_res = (
+            supabase.table("audit_trail")
+            .select("decision_type, reconciliation_state!inner(batch_id)")
+            .eq("reconciliation_state.batch_id", id)
+            .execute()
+        )
+        pipeline_breakdown = {
+            "deterministic_match": 0,
+            "id_reference_match": 0,
+            "llm_match": 0,
+            "exception_flag": 0,
+            "human_override": 0,
+        }
+        for a in (audits_res.data or []):
+            dt = a.get("decision_type")
+            if dt:
+                pipeline_breakdown[dt] = pipeline_breakdown.get(dt, 0) + 1
+
+        # 5. 20 most recent audit_trail entries
+        recent_audits = (
+            supabase.table("audit_trail")
+            .select(
+                "id, reconciliation_id, node_name, decision_type, reasoning, confidence, created_at, "
+                "reconciliation_state!inner(batch_id, raw_orders(order_id, amount), raw_bank_statements(txn_id, amount))"
+            )
+            .eq("reconciliation_state.batch_id", id)
+            .order("created_at", desc=True)
+            .limit(20)
+            .execute()
+            .data
+            or []
+        )
+
+        recent_entries: List[AuditTrailSummaryItem] = []
+        for a in recent_audits:
+            recon = a.get("reconciliation_state") or {}
+            order = recon.get("raw_orders") or {}
+            bank = recon.get("raw_bank_statements") or {}
+
+            amt = order.get("amount")
+            if amt is None and bank:
+                amt = bank.get("amount")
+
+            recent_entries.append(
+                AuditTrailSummaryItem(
+                    id=a["id"],
+                    reconciliation_id=a["reconciliation_id"],
+                    node_name=a.get("node_name", ""),
+                    decision_type=a.get("decision_type", ""),
+                    order_id=order.get("order_id"),
+                    txn_id=bank.get("txn_id") if bank else None,
+                    amount=float(amt) if amt is not None else None,
+                    confidence=float(a["confidence"]) if a.get("confidence") is not None else None,
+                    reasoning=a.get("reasoning"),
+                    created_at=str(a.get("created_at", "")),
+                )
+            )
+
+        return BatchSummaryResponse(
+            batch_id=id,
+            id=id,
+            label=batch.get("label") or "Unnamed Batch",
+            created_at=str(batch.get("created_at", "")),
+            status=status,
+            total_orders=total_orders,
+            order_count=total_orders,
+            matched_count=matched_cnt,
+            exception_count=exception_cnt,
+            rejected_count=rejected_cnt,
+            pending_count=pending_cnt,
+            match_rate=match_rate,
+            match_rate_pct=match_rate_pct,
+            total_settled_amount=round(total_settled, 2),
+            pipeline_breakdown=pipeline_breakdown,
+            recent_audit_trail=recent_entries,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate batch summary: {str(e)}")
 
 
 @app.get("/batches/{id}/exceptions", response_model=ExceptionsResponse)
