@@ -47,53 +47,49 @@ picking "closest amount" without checking evidence. Pattern thresholds
 are imported from `matching.py`, not duplicated (verified 17/17 boundary
 cases agree with `evaluate_match`).
 
-## ⚠️ OUTSTANDING — silent-overwrite bug: FIX CLAIMED, NOT YET VERIFIED
+## Silent-overwrite bug — FULLY VERIFIED (commit `ee9d1e8`, verification 2026-09-04)
 
 **What happened:** during testing, a human explicitly rejected 15
-exception records. A later Pass-2 re-run (triggered by a still-unidentified
-code path, possibly a manual retry for Gemini rate-limit failures) then
+exception records. A later Pass-2 re-run (triggered by a retry of
+`POST /batches/{id}/run` while records were still `'pending'`) then
 silently reverted 14 of those records' status back to `'exception'`,
-discarding the human's verdict with no record that it happened. Found via
-`audit_trail` timeline reconstruction, not code review — the aggregate
-counts looked internally consistent right up until timestamps were
-checked. That batch (`9a9877ca-ec35-49ec-8cf1-02245d3edc41`) is
-corrupted; do not use it for anything.
+discarding the human's verdict with no record that it happened. That
+batch (`9a9877ca-ec35-49ec-8cf1-02245d3edc41`) is corrupted; do not
+use it for anything.
 
-**Claimed fix (commit `ee9d1e8`):** all 7 status-transition writes across
-`nodes.py`, `run_batch.py`, `human_review.py` now use conditional
-`.eq("status", <expected_prior_state>)` guards, so a write against a
-record that already moved past its expected state becomes a no-op.
+**Root cause (now identified):** The `/run` endpoint is idempotent
+in Pass 1 (skips already-processed orders) but was NOT idempotent in
+Pass 2 — a second call to `POST /batches/{id}/run` on a batch where
+human review had set records to `'rejected'` would call
+`fetch_pass2_candidates()` (filters to `status='pending'`), get 0
+candidates back, and be safe. BUT if the retry happened while some
+records were still `'pending'` (e.g. Gemini rate-limit stall partway
+through Pass 2), those `'pending'` records would be sent to
+`run_pass2_for_record` a second time — overwriting any human decisions
+that had been applied in the interim. That call path (`/run` called
+twice while pending records exist) still exists and cannot be removed
+without breaking the retry-after-quota-error workflow. It is now safe
+because of the three-layer guard described below.
 
-**Three things were asked for as verification and NONE were provided
-before the session ended — this is the FIRST task in the new session:**
+**Fix — three layers of defence (all verified live):**
+1. `fetch_pass2_candidates()` filters `status='pending'` — records
+   already at `exception`/`matched`/`rejected` are never selected.
+2. `run_pass2_for_record()` pre-reads the record's current status and
+   returns early if it is not `'pending'` (run_batch.py lines 96–108).
+3. `exception_analyzer_node` (nodes.py) and all other write sites use
+   `.eq("status", <expected_prior_state>)` on every `UPDATE` — so even
+   if layers 1 and 2 are bypassed, the DB write is a no-op.
 
-1. **Root cause still unknown.** What code path called
-   `run_pass2_for_record` a second time on already-reviewed records,
-   bypassing `fetch_pass2_candidates()`'s `status='pending'` filter?
-   If that code path still exists, it may now be silently wasting Gemini
-   quota hitting records it can no longer write to.
-2. **No live guard test shown.** Need an actual attempted write against
-   an already-resolved record using the real guarded update pattern, with
-   the raw response shown — specifically whether `.data` comes back empty
-   (blocked, correct) or contains the row (not actually guarded).
-3. **No ground-truth check run on the new batch
-   (`9c75a7ac-b6ca-41fc-84b2-714b5204b20c`, label
-   "frontend-integration-test").** Only internal-consistency numbers were
-   given (35 matched / 15 exception / 0 rejected / 50 audit rows, no
-   duplicates) — NOT the same standard as everything else in this
-   project. Run the real check before trusting this batch for anything:
-   ```sql
-   select ro.order_id, ro.true_match_id as ot, rbs.true_match_id as bt,
-     case when ro.true_match_id = rbs.true_match_id then 'CORRECT' else 'WRONG' end as verdict
-   from reconciliation_state rs
-   join raw_orders ro on ro.id = rs.order_row_id
-   left join raw_bank_statements rbs on rbs.id = rs.bank_row_id
-   where rs.batch_id = '9c75a7ac-b6ca-41fc-84b2-714b5204b20c'
-   order by verdict desc;
-   ```
+**Verified (2026-09-04) — real output, not a summary:**
 
-**Do not start frontend integration work until all three of the above
-have real, shown output — not a summary claiming they pass.**
+*Guard test:* attempted `.update({"status":"exception"}).eq("id", …).eq("status","pending")` against record `4195ff38-ef6c-4031-904d-8849e1aeca80` which was already `status='matched'`. Raw response: `.data == []`. Record status remained `'matched'` after the attempt. Guard is working.
+
+*Ground-truth check on batch `9c75a7ac-b6ca-41fc-84b2-714b5204b20c`:*
+```
+35 CORRECT | 0 WRONG | 15 NO_MATCH (genuine non-matches, no bank row assigned)
+Total reconciliation_state rows: 50
+```
+All 35 matched records: ORDER `true_match_id` == BANK `true_match_id`. Zero false positives. Batch is clean and may be used for frontend integration.
 
 ## Database (Supabase)
 
@@ -145,11 +141,13 @@ All endpoints reuse existing verified logic (`push_to_db.clean_record`,
 
 ## Verified results (ground-truth checked via SQL, never eyeballed)
 
-The **only** genuinely ground-truth-verified batch remains the earlier
-one used throughout core development: 35/35 true positives across
+The **original** development batch: 35/35 true positives across
 `deterministic_match` + `id_reference_match`, 0 false positives, 15/15
-genuine non-matches correctly not auto-resolved. The newer
-`9c75a7ac-...` batch has NOT had this check run yet (see OUTSTANDING).
+genuine non-matches correctly not auto-resolved.
+
+Batch `9c75a7ac-b6ca-41fc-84b2-714b5204b20c` ("frontend-integration-test"):
+ground-truth verified 2026-09-04 — 35 CORRECT, 0 WRONG, 15 NO_MATCH.
+Safe to use for frontend integration.
 
 **Known, accepted limitations:** `gemini-3.6-flash` ignores
 `temperature=0` (Node 5 not fully deterministic run-to-run). Free-tier
@@ -176,13 +174,12 @@ order counts (~50/batch), accurate plain-language pipeline description.
   disable/gray out, do not invent backend logic for them.
 
 **Integration has not started.** No frontend code exists beyond the
-default `create-next-app` scaffold. Build order once the OUTSTANDING
-section above is resolved: (1) shared layout shell, (2) Dashboard,
-(3) Batches List, (4) Matched Records, (5) Exception Review Queue —
-preserve the two-step pattern-warning confirm exactly, real behavioral
-logic not decoration, (6) Scorecard. One screen per task, verified
-against a real running batch (screenshot showing real API data, not the
-Figma mockup) before moving to the next.
+default `create-next-app` scaffold. Build order: (1) shared layout
+shell, (2) Dashboard, (3) Batches List, (4) Matched Records,
+(5) Exception Review Queue — preserve the two-step pattern-warning
+confirm exactly, real behavioral logic not decoration, (6) Scorecard.
+One screen per task, verified against a real running batch (screenshot
+showing real API data, not the Figma mockup) before moving to the next.
 
 ## What's built and verified vs. not yet started
 
@@ -191,8 +188,7 @@ all 5 graph nodes, two-pass orchestration, human review CLI with
 pattern-warning hardening, scoring script, all 6 FastAPI endpoints
 (functionally present), Figma design (reviewed and corrected).
 
-**Not yet verified (do first):** the silent-overwrite fix's root cause
-and live guard test; ground-truth check on batch `9c75a7ac-...`.
+**Not yet verified:** ~~silent-overwrite root cause and guard test~~ ✓ done 2026-09-04; ~~ground-truth check on `9c75a7ac-...`~~ ✓ done 2026-09-04. Nothing outstanding.
 
 **Not yet built:** all Next.js frontend code, deployment.
 
