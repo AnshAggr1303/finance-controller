@@ -164,12 +164,29 @@ self-hosted SVGs instead.
   expansion all confirmed against real data with no console errors;
   both navigation entry points (Batches list, Dashboard's "View All
   Transactions" — previously dead-ended at `/batches`) land correctly.
+- Exception Review Queue (`1:1670`) — wired to `GET /batches/{id}/
+  exceptions` and `POST /batches/{id}/review/{id}`, reusing
+  `human_review.py`'s `parse_human_response`/`apply_decision` exactly
+  (no reimplementation). Added a real `flag_reason`/`flag_confidence`
+  per exception from the actual Node 5 `audit_trail` row (not a
+  fabricated score). Two-step confirm verified live: selecting an
+  unknown-pattern candidate shows a warning with ZERO network requests
+  until "Confirm Override & Match"; confirmed rows appear in
+  `reconciliation_state`/`audit_trail`/`human_overrides` exactly as the
+  CLI produces, checked via a direct Supabase query independent of this
+  session's own endpoints. Reject path verified the same way. A
+  known-pattern-no-warning candidate cannot occur naturally — confirmed
+  empirically across all pre-existing batches (0/120+) and structurally
+  (Node 4 already exhausts every known pattern against every unclaimed
+  row before Node 5's wider 15-day window can produce one) — so that
+  one path was verified against one disclosed synthetic candidate on a
+  disposable probe batch, not the trusted batch. Trusted batch
+  `9c75a7ac-...` was only ever read (final screenshot), never had a
+  decision submitted against it; `data/scoring.py` reconfirmed
+  35/0/0/15 unchanged afterward.
 
-**Not yet built:** Exception Review Queue (`1:1670` — preserve the
-two-step pattern-warning confirm exactly, real behavioral logic, wire
-to `GET /batches/{id}/exceptions` and `POST /batches/{id}/review/{id}`),
-Scorecard (`1:1265` — wire to `scoring.py`'s output or a dedicated
-endpoint).
+**Not yet built:** Scorecard (`1:1265` — wire to `scoring.py`'s output
+or a dedicated endpoint).
 
 ## Verified results (ground-truth checked via SQL, never eyeballed)
 
@@ -189,10 +206,9 @@ all 5 graph nodes, two-pass orchestration, human review CLI + API path
 with pattern-warning hardening, scoring script, all 7 FastAPI endpoints
 (added `GET /batches/{id}/matches`), Figma design (reviewed/corrected),
 shared layout shell, Dashboard screen, Batches List screen, Re-trigger
-button wiring, Matched Records screen.
+button wiring, Matched Records screen, Exception Review Queue screen.
 
-**Not yet built:** Exception Review Queue screen, Scorecard screen,
-deployment.
+**Not yet built:** Scorecard screen, deployment.
 
 ## Working conventions established so far
 
