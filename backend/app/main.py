@@ -113,6 +113,8 @@ class ExceptionItem(BaseModel):
     currency: str
     customer_ref: str
     order_ts: Optional[str] = None
+    flag_reason: Optional[str] = None
+    flag_confidence: Optional[float] = None
     review_candidates: List[CandidateItem]
 
 
@@ -478,6 +480,24 @@ def get_batch_exceptions(id: str):
     rec_rows = fetch_exceptions(id)
     exceptions_list: List[ExceptionItem] = []
 
+    # Real Node 5 reasoning for the "why was this flagged" panel — same
+    # audit_trail row the CLI/dashboard already show, not a fabricated score.
+    recon_ids = [rec["id"] for rec in rec_rows]
+    flag_reason_by_recon: Dict[str, Dict[str, Any]] = {}
+    if recon_ids:
+        flag_rows = (
+            supabase.table("audit_trail")
+            .select("reconciliation_id, reasoning, confidence, created_at")
+            .in_("reconciliation_id", recon_ids)
+            .eq("decision_type", "exception_flag")
+            .order("created_at", desc=False)
+            .execute()
+            .data
+            or []
+        )
+        for f in flag_rows:
+            flag_reason_by_recon[f["reconciliation_id"]] = f
+
     for rec in rec_rows:
         order_res = (
             supabase.table("raw_orders")
@@ -514,6 +534,8 @@ def get_batch_exceptions(id: str):
                 )
             )
 
+        flag_info = flag_reason_by_recon.get(rec["id"], {})
+
         exceptions_list.append(
             ExceptionItem(
                 reconciliation_id=rec["id"],
@@ -523,6 +545,8 @@ def get_batch_exceptions(id: str):
                 currency=order["currency"],
                 customer_ref=order["customer_ref"],
                 order_ts=str(order.get("order_ts", "")),
+                flag_reason=flag_info.get("reasoning"),
+                flag_confidence=float(flag_info["confidence"]) if flag_info.get("confidence") is not None else None,
                 review_candidates=candidate_items,
             )
         )

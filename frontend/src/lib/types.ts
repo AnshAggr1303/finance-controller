@@ -62,6 +62,46 @@ export interface MatchesResponse {
   matches: MatchItem[];
 }
 
+export interface CandidateItem {
+  index: number;
+  id: string;
+  txn_id: string;
+  amount: number;
+  currency: string;
+  settled_ts: string;
+  narration: string;
+  delta: number;
+  is_known_pattern: boolean;
+  pattern_label: string;
+  formatted_line: string;
+}
+
+export interface ExceptionItem {
+  reconciliation_id: string;
+  order_row_id: string;
+  order_id: string;
+  amount: number;
+  currency: string;
+  customer_ref: string;
+  order_ts?: string | null;
+  flag_reason?: string | null;
+  flag_confidence?: number | null;
+  review_candidates: CandidateItem[];
+}
+
+export interface ExceptionsResponse {
+  batch_id: string;
+  exceptions_count: number;
+  exceptions: ExceptionItem[];
+}
+
+export interface ReviewDecisionResponse {
+  reconciliation_id: string;
+  status: string;
+  action?: string | null;
+  message?: string | null;
+}
+
 export interface BatchListItem {
   id: string;
   batch_id: string;
