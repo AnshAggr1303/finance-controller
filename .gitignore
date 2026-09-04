@@ -25,3 +25,10 @@ Thumbs.db
 # Generated data — keep the generator script, not every run's output
 data/output/*.csv
 !data/output/.gitkeep
+
+# Next.js auto-generates these at frontend/ with `agentRules: true` (the
+# default) — disabled via `agentRules: false` in frontend/next.config.ts,
+# but ignore them here too in case that config is ever missing/reverted.
+# Real project conventions live only at the repo root (AGENTS.md, CLAUDE.md).
+frontend/AGENTS.md
+frontend/CLAUDE.md
