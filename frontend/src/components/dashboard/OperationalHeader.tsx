@@ -30,6 +30,10 @@ export function OperationalHeader({
   isRetriggering = false,
 }: OperationalHeaderProps) {
   const isCompleted = batchStatus === "completed";
+  // Batch status isn't known until the summary fetch resolves — treat that
+  // window as non-actionable too, not just "not completed", so the button
+  // isn't briefly clickable before we know whether it should be disabled.
+  const isRetriggerDisabled = !batchStatus || isCompleted || isRetriggering;
   // Format batch date or default
   const dateDisplay = batchCreatedAt
     ? new Date(batchCreatedAt).toLocaleDateString("en-US", {
@@ -108,14 +112,16 @@ export function OperationalHeader({
         <button
           type="button"
           onClick={onRetrigger}
-          disabled={isCompleted || isRetriggering}
+          disabled={isRetriggerDisabled}
           title={
-            isCompleted
+            !batchStatus
+              ? "Loading batch status…"
+              : isCompleted
               ? "Batch already completed — re-trigger disabled"
               : "Re-run the reconciliation pipeline for this batch"
           }
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors shadow-xs text-xs font-semibold ${
-            isCompleted || isRetriggering
+            isRetriggerDisabled
               ? "bg-surface-container-high text-on-surface-variant/50 cursor-not-allowed"
               : "bg-secondary text-on-secondary hover:bg-secondary-container cursor-pointer"
           }`}
