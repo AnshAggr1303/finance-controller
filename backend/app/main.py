@@ -441,6 +441,8 @@ def get_batch_summary(id: str):
             recent_audit_trail=recent_entries,
         )
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to generate batch summary: {str(e)}")
 
 

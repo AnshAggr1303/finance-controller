@@ -173,24 +173,19 @@ order counts (~50/batch), accurate plain-language pipeline description.
 - "Export Audit Pack" and "Skip for Later" buttons have no backend —
   disable/gray out, do not invent backend logic for them.
 
-**Integration has not started.** No frontend code exists beyond the
-default `create-next-app` scaffold. Build order: (1) shared layout
-shell, (2) Dashboard, (3) Batches List, (4) Matched Records,
-(5) Exception Review Queue — preserve the two-step pattern-warning
-confirm exactly, real behavioral logic not decoration, (6) Scorecard.
-One screen per task, verified against a real running batch (screenshot
-showing real API data, not the Figma mockup) before moving to the next.
+**Frontend integration in progress:**
+- ✓ (1) Shared layout shell built & verified (left sidebar with Dashboard, Batches, Exception Review, Scorecard; top bar with active batch label, status badge, search, Run New Batch CTA).
+- ✓ (2) Dashboard screen (`1:6`) built & verified against real running batch `9c75a7ac-b6ca-41fc-84b2-714b5204b20c` via `GET /batches/{id}/summary`. ₹ glyph font issue fixed (Inter & JetBrains Mono with tabular numerals). "Export" button disabled as specified.
+- Next: (3) Batches List (`1:432`), (4) Matched Records (`1:826`), (5) Exception Review Queue (`1:1670`), (6) Scorecard (`1:1265`).
 
 ## What's built and verified vs. not yet started
 
 **Built & verified:** schema + RLS + unique constraint, data generator,
 all 5 graph nodes, two-pass orchestration, human review CLI with
-pattern-warning hardening, scoring script, all 6 FastAPI endpoints
-(functionally present), Figma design (reviewed and corrected).
+pattern-warning hardening, scoring script, all 6 FastAPI endpoints,
+Figma design (reviewed and corrected), shared layout shell, Dashboard screen (`1:6`) verified against batch `9c75a7ac-...`.
 
-**Not yet verified:** ~~silent-overwrite root cause and guard test~~ ✓ done 2026-09-04; ~~ground-truth check on `9c75a7ac-...`~~ ✓ done 2026-09-04. Nothing outstanding.
-
-**Not yet built:** all Next.js frontend code, deployment.
+**Not yet built:** screens 3–6 (Batches List, Matched Records, Exception Review Queue, Scorecard), deployment.
 
 ## Working conventions established so far
 
