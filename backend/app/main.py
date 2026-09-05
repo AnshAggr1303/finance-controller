@@ -15,9 +15,11 @@ Endpoints:
 import math
 import os
 import sys
+import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, TypeVar
 
+import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -71,6 +73,42 @@ def _clean_record(record: dict) -> dict:
         k: (None if isinstance(v, float) and math.isnan(v) else v)
         for k, v in record.items()
     }
+
+
+_T = TypeVar("_T")
+
+
+def _retry_on_read_error(
+    fn: Callable[[], _T],
+    attempts: int = 3,
+    backoffs: tuple = (0.1, 0.3),
+) -> _T:
+    """Retry fn() on a transient httpx.ReadError only.
+
+    Reproduced live under concurrent load (multiple screens polling
+    /summary, /exceptions, /scorecard, /matches for the same batch at
+    once): httpx.ReadError "[Errno 35] Resource temporarily unavailable"
+    from the shared HTTP/2 connection to Supabase's PostgREST endpoint --
+    a transient OS-level socket failure, not a data or logic error, so
+    retrying the exact same query is the correct response.
+
+    fn must build AND execute the query itself (e.g.
+    `lambda: supabase.table(...).select(...).execute()`) so each retry
+    issues a fresh request rather than reusing a builder that already ran.
+    Currently used only in get_batch_summary and get_batch_exceptions --
+    the two endpoints with actually reproduced failures, not applied
+    backend-wide.
+    """
+    last_exc: Optional[httpx.ReadError] = None
+    for attempt in range(attempts):
+        try:
+            return fn()
+        except httpx.ReadError as e:
+            last_exc = e
+            if attempt < attempts - 1:
+                time.sleep(backoffs[min(attempt, len(backoffs) - 1)])
+    assert last_exc is not None
+    raise last_exc
 
 
 # ── Pydantic Request / Response Models ───────────────────────────────────────
@@ -369,8 +407,8 @@ def run_batch(id: str):
 def get_batch_summary(id: str):
     """Return aggregate counts, settled amount, pipeline-stage breakdown, and 20 recent audit entries."""
     # 1. Verify batch exists
-    batch_res = (
-        supabase.table("batches")
+    batch_res = _retry_on_read_error(
+        lambda: supabase.table("batches")
         .select("id, label, created_at")
         .eq("id", id)
         .execute()
@@ -382,12 +420,14 @@ def get_batch_summary(id: str):
 
     try:
         # 2. Total orders in this batch
-        orders_res = supabase.table("raw_orders").select("id").eq("batch_id", id).execute()
+        orders_res = _retry_on_read_error(
+            lambda: supabase.table("raw_orders").select("id").eq("batch_id", id).execute()
+        )
         total_orders = len(orders_res.data or [])
 
         # 3. Reconciliation state records with matched bank amount for settlement
-        recon_res = (
-            supabase.table("reconciliation_state")
+        recon_res = _retry_on_read_error(
+            lambda: supabase.table("reconciliation_state")
             .select("id, status, raw_bank_statements(amount)")
             .eq("batch_id", id)
             .execute()
@@ -417,8 +457,8 @@ def get_batch_summary(id: str):
             status = "pending"
 
         # 4. Pipeline-stage breakdown by decision_type from audit_trail
-        audits_res = (
-            supabase.table("audit_trail")
+        audits_res = _retry_on_read_error(
+            lambda: supabase.table("audit_trail")
             .select("decision_type, reconciliation_state!inner(batch_id)")
             .eq("reconciliation_state.batch_id", id)
             .execute()
@@ -437,16 +477,17 @@ def get_batch_summary(id: str):
 
         # 5. 20 most recent audit_trail entries
         recent_audits = (
-            supabase.table("audit_trail")
-            .select(
-                "id, reconciliation_id, node_name, decision_type, reasoning, confidence, created_at, "
-                "reconciliation_state!inner(batch_id, raw_orders(order_id, amount), raw_bank_statements(txn_id, amount))"
-            )
-            .eq("reconciliation_state.batch_id", id)
-            .order("created_at", desc=True)
-            .limit(20)
-            .execute()
-            .data
+            _retry_on_read_error(
+                lambda: supabase.table("audit_trail")
+                .select(
+                    "id, reconciliation_id, node_name, decision_type, reasoning, confidence, created_at, "
+                    "reconciliation_state!inner(batch_id, raw_orders(order_id, amount), raw_bank_statements(txn_id, amount))"
+                )
+                .eq("reconciliation_state.batch_id", id)
+                .order("created_at", desc=True)
+                .limit(20)
+                .execute()
+            ).data
             or []
         )
 
@@ -502,96 +543,103 @@ def get_batch_summary(id: str):
 @app.get("/batches/{id}/exceptions", response_model=ExceptionsResponse)
 def get_batch_exceptions(id: str):
     """List all records in a batch currently awaiting human review with candidate matches."""
-    rec_rows = fetch_exceptions(id)
-    exceptions_list: List[ExceptionItem] = []
+    try:
+        rec_rows = _retry_on_read_error(lambda: fetch_exceptions(id))
+        exceptions_list: List[ExceptionItem] = []
 
-    # Real Node 5 reasoning for the "why was this flagged" panel — same
-    # audit_trail row the CLI/dashboard already show, not a fabricated score.
-    recon_ids = [rec["id"] for rec in rec_rows]
-    flag_reason_by_recon: Dict[str, Dict[str, Any]] = {}
-    if recon_ids:
-        flag_rows = (
-            supabase.table("audit_trail")
-            .select("reconciliation_id, reasoning, confidence, created_at")
-            .in_("reconciliation_id", recon_ids)
-            .eq("decision_type", "exception_flag")
-            .order("created_at", desc=False)
-            .execute()
-            .data
-            or []
-        )
-        for f in flag_rows:
-            flag_reason_by_recon[f["reconciliation_id"]] = f
+        # Real Node 5 reasoning for the "why was this flagged" panel — same
+        # audit_trail row the CLI/dashboard already show, not a fabricated score.
+        recon_ids = [rec["id"] for rec in rec_rows]
+        flag_reason_by_recon: Dict[str, Dict[str, Any]] = {}
+        if recon_ids:
+            flag_rows = (
+                _retry_on_read_error(
+                    lambda: supabase.table("audit_trail")
+                    .select("reconciliation_id, reasoning, confidence, created_at")
+                    .in_("reconciliation_id", recon_ids)
+                    .eq("decision_type", "exception_flag")
+                    .order("created_at", desc=False)
+                    .execute()
+                ).data
+                or []
+            )
+            for f in flag_rows:
+                flag_reason_by_recon[f["reconciliation_id"]] = f
 
-    # Batched, not one query per exception record -- get_batch_exceptions
-    # previously fired len(rec_rows) separate raw_orders round trips here,
-    # which is what made a single transient network blip (httpx.ReadError)
-    # take down the whole endpoint far more often than the single-query
-    # /matches and /summary endpoints ever saw.
-    order_row_ids = [rec["order_row_id"] for rec in rec_rows]
-    orders_by_id: Dict[str, Dict[str, Any]] = {}
-    if order_row_ids:
-        orders_rows = (
-            supabase.table("raw_orders")
-            .select("id, order_id, amount, currency, order_ts, customer_ref")
-            .in_("id", order_row_ids)
-            .execute()
-            .data
-            or []
-        )
-        orders_by_id = {o["id"]: o for o in orders_rows}
+        # Batched, not one query per exception record -- get_batch_exceptions
+        # previously fired len(rec_rows) separate raw_orders round trips here,
+        # which is what made a single transient network blip (httpx.ReadError)
+        # take down the whole endpoint far more often than the single-query
+        # /matches and /summary endpoints ever saw.
+        order_row_ids = [rec["order_row_id"] for rec in rec_rows]
+        orders_by_id: Dict[str, Dict[str, Any]] = {}
+        if order_row_ids:
+            orders_rows = (
+                _retry_on_read_error(
+                    lambda: supabase.table("raw_orders")
+                    .select("id, order_id, amount, currency, order_ts, customer_ref")
+                    .in_("id", order_row_ids)
+                    .execute()
+                ).data
+                or []
+            )
+            orders_by_id = {o["id"]: o for o in orders_rows}
 
-    for rec in rec_rows:
-        order = orders_by_id.get(rec["order_row_id"])
-        if not order:
-            continue
-        order_amount = float(order["amount"])
-        candidates_raw = rec.get("review_candidates") or []
+        for rec in rec_rows:
+            order = orders_by_id.get(rec["order_row_id"])
+            if not order:
+                continue
+            order_amount = float(order["amount"])
+            candidates_raw = rec.get("review_candidates") or []
 
-        candidate_items: List[CandidateItem] = []
-        for i, c in enumerate(candidates_raw, start=1):
-            bank_amt = float(c.get("amount", 0.0))
-            delta = round(bank_amt - order_amount, 2)
-            candidate_items.append(
-                CandidateItem(
-                    index=i,
-                    id=c.get("id", str(i)),
-                    txn_id=c.get("txn_id", ""),
-                    amount=bank_amt,
-                    currency=c.get("currency", order.get("currency", "INR")),
-                    settled_ts=str(c.get("settled_ts", "")),
-                    narration=c.get("narration", ""),
-                    delta=delta,
-                    is_known_pattern=is_known_pattern(order_amount, bank_amt),
-                    pattern_label=_pattern_label(order_amount, bank_amt),
-                    formatted_line=format_candidate_line(
-                        i, c, order_amount, order.get("currency", "INR")
-                    ),
+            candidate_items: List[CandidateItem] = []
+            for i, c in enumerate(candidates_raw, start=1):
+                bank_amt = float(c.get("amount", 0.0))
+                delta = round(bank_amt - order_amount, 2)
+                candidate_items.append(
+                    CandidateItem(
+                        index=i,
+                        id=c.get("id", str(i)),
+                        txn_id=c.get("txn_id", ""),
+                        amount=bank_amt,
+                        currency=c.get("currency", order.get("currency", "INR")),
+                        settled_ts=str(c.get("settled_ts", "")),
+                        narration=c.get("narration", ""),
+                        delta=delta,
+                        is_known_pattern=is_known_pattern(order_amount, bank_amt),
+                        pattern_label=_pattern_label(order_amount, bank_amt),
+                        formatted_line=format_candidate_line(
+                            i, c, order_amount, order.get("currency", "INR")
+                        ),
+                    )
+                )
+
+            flag_info = flag_reason_by_recon.get(rec["id"], {})
+
+            exceptions_list.append(
+                ExceptionItem(
+                    reconciliation_id=rec["id"],
+                    order_row_id=rec["order_row_id"],
+                    order_id=order["order_id"],
+                    amount=order_amount,
+                    currency=order["currency"],
+                    customer_ref=order["customer_ref"],
+                    order_ts=str(order.get("order_ts", "")),
+                    flag_reason=flag_info.get("reasoning"),
+                    flag_confidence=float(flag_info["confidence"]) if flag_info.get("confidence") is not None else None,
+                    review_candidates=candidate_items,
                 )
             )
 
-        flag_info = flag_reason_by_recon.get(rec["id"], {})
-
-        exceptions_list.append(
-            ExceptionItem(
-                reconciliation_id=rec["id"],
-                order_row_id=rec["order_row_id"],
-                order_id=order["order_id"],
-                amount=order_amount,
-                currency=order["currency"],
-                customer_ref=order["customer_ref"],
-                order_ts=str(order.get("order_ts", "")),
-                flag_reason=flag_info.get("reasoning"),
-                flag_confidence=float(flag_info["confidence"]) if flag_info.get("confidence") is not None else None,
-                review_candidates=candidate_items,
-            )
+        return ExceptionsResponse(
+            batch_id=id,
+            exceptions_count=len(exceptions_list),
+            exceptions=exceptions_list,
         )
-
-    return ExceptionsResponse(
-        batch_id=id,
-        exceptions_count=len(exceptions_list),
-        exceptions=exceptions_list,
-    )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to fetch exceptions: {str(e)}")
 
 
 @app.get("/batches/{id}/matches", response_model=MatchesResponse)
