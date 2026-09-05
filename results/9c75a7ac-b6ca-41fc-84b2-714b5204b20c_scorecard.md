@@ -4,7 +4,7 @@
 |-------|-------|
 | Batch label | frontend-integration-test |
 | Batch created | 2026-09-04T05:37:17.274729+00:00 |
-| Scored at | 2026-09-05 06:26 UTC |
+| Scored at | 2026-09-05 08:17 UTC |
 
 ## Confusion matrix
 

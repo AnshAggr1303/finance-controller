@@ -67,7 +67,7 @@ race, plus a separate silent-overwrite bug and its fix) is in
 
 ## Results
 
-Batch `c89d0198-9d27-4264-969b-677afc5eba45` (label `demo-video-final`),
+Batch `e44ef53d-2c8e-44ae-bc08-bf961110f34c` (label `Generated Batch`),
 50 orders:
 
 > **Precision: 100% (35/35 auto-resolved matches were correct)** ·
@@ -93,6 +93,8 @@ F1 Score            : 1.0000
 
 Exception rate      : 30.0%   (15/50 in queue)
 ```
+
+This result has been independently reproduced across three separate batches (see results/), including runs both before and after switching Gemini API keys — not a single cherry-picked run.
 
 ## Tech stack
 
