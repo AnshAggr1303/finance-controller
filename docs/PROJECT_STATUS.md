@@ -197,7 +197,15 @@ This is the trusted batch for all frontend work.
 **Known, accepted limitations:** `gemini-3.6-flash` ignores
 `temperature=0` (Node 5 not fully deterministic run-to-run). Free-tier
 Gemini quota is 20 requests/DAY per project — get a paid key before any
-live demo.
+live demo. No `DELETE /batches/{id}` endpoint exists yet, and a plain
+`delete from batches where id = ...` is NOT sufficient on its own —
+`human_overrides.resolved_bank_row_id` has no cascade to
+`raw_bank_statements`, so it blocks the delete until `human_overrides`
+and `audit_trail` are cleared first (verified directly: the single-
+statement delete failed with a real FK violation). Test/probe batches
+currently require this manual, correctly-ordered cleanup:
+`human_overrides` → `audit_trail` → `reconciliation_state` →
+`raw_bank_statements` → `raw_orders` → `batches`.
 
 ## What's built and verified vs. not yet started
 
