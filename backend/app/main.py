@@ -523,17 +523,28 @@ def get_batch_exceptions(id: str):
         for f in flag_rows:
             flag_reason_by_recon[f["reconciliation_id"]] = f
 
-    for rec in rec_rows:
-        order_res = (
+    # Batched, not one query per exception record -- get_batch_exceptions
+    # previously fired len(rec_rows) separate raw_orders round trips here,
+    # which is what made a single transient network blip (httpx.ReadError)
+    # take down the whole endpoint far more often than the single-query
+    # /matches and /summary endpoints ever saw.
+    order_row_ids = [rec["order_row_id"] for rec in rec_rows]
+    orders_by_id: Dict[str, Dict[str, Any]] = {}
+    if order_row_ids:
+        orders_rows = (
             supabase.table("raw_orders")
-            .select("order_id, amount, currency, order_ts, customer_ref")
-            .eq("id", rec["order_row_id"])
-            .single()
+            .select("id, order_id, amount, currency, order_ts, customer_ref")
+            .in_("id", order_row_ids)
             .execute()
+            .data
+            or []
         )
-        if not order_res.data:
+        orders_by_id = {o["id"]: o for o in orders_rows}
+
+    for rec in rec_rows:
+        order = orders_by_id.get(rec["order_row_id"])
+        if not order:
             continue
-        order = order_res.data
         order_amount = float(order["amount"])
         candidates_raw = rec.get("review_candidates") or []
 
