@@ -13,10 +13,14 @@ import {
 import { ReconLogo } from "../ReconLogo";
 
 interface SidebarProps {
-  exceptionCount?: number;
+  // undefined/null means "not known yet" (still loading, or the fetch
+  // that would supply it failed) -- never substitute a stale/placeholder
+  // number for that. The badge is simply omitted in that case.
+  exceptionCount?: number | null;
 }
 
-export function Sidebar({ exceptionCount = 15 }: SidebarProps) {
+export function Sidebar({ exceptionCount }: SidebarProps) {
+  const hasExceptionCount = typeof exceptionCount === "number";
   const pathname = usePathname();
 
   const navItems = [
@@ -37,7 +41,7 @@ export function Sidebar({ exceptionCount = 15 }: SidebarProps) {
       href: "/exceptions",
       icon: AlertTriangle,
       active: pathname.startsWith("/exceptions") || pathname.startsWith("/review"),
-      badge: exceptionCount > 0 ? exceptionCount : undefined,
+      badge: hasExceptionCount && exceptionCount > 0 ? exceptionCount : undefined,
       badgeColor: "bg-error-container text-on-error-container",
     },
     {

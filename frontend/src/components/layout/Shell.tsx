@@ -9,7 +9,7 @@ interface ShellProps {
   batchLabel?: string;
   batchStatus?: string;
   matchRatePct?: number;
-  exceptionCount?: number;
+  exceptionCount?: number | null;
   onRunNewBatch?: () => void;
 }
 
