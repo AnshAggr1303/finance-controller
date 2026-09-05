@@ -25,6 +25,7 @@ Thumbs.db
 # Generated data — keep the generator script, not every run's output
 data/output/*.csv
 !data/output/.gitkeep
+.gstack/
 
 # Next.js auto-generates these at frontend/ with `agentRules: true` (the
 # default) — disabled via `agentRules: false` in frontend/next.config.ts,
