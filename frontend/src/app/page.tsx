@@ -93,6 +93,7 @@ function DashboardInner() {
       batchStatus={summary?.status}
       matchRatePct={summary?.match_rate_pct}
       exceptionCount={summary?.exception_count}
+      activeBatchId={activeBatchId}
     >
       <div className="flex flex-col w-full max-w-7xl mx-auto space-y-4">
         {/* Operational Header with Epoch & Filter Bar */}

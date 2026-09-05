@@ -10,7 +10,9 @@ interface ShellProps {
   batchStatus?: string | null;
   matchRatePct?: number | null;
   exceptionCount?: number | null;
-  onRunNewBatch?: () => void;
+  // The batch currently being viewed -- threaded into Sidebar so its nav
+  // links carry ?batch= and switching screens doesn't lose context.
+  activeBatchId?: string | null;
 }
 
 export function Shell({
@@ -19,17 +21,16 @@ export function Shell({
   batchStatus,
   matchRatePct,
   exceptionCount,
-  onRunNewBatch,
+  activeBatchId,
 }: ShellProps) {
   return (
     <div className="min-h-screen bg-surface text-on-surface">
-      <Sidebar exceptionCount={exceptionCount} />
+      <Sidebar exceptionCount={exceptionCount} activeBatchId={activeBatchId} />
       <div className="pl-sidebar-width">
         <TopBar
           batchLabel={batchLabel}
           batchStatus={batchStatus}
           matchRatePct={matchRatePct}
-          onRunNewBatch={onRunNewBatch}
         />
         <main className="w-full pt-14 px-6 pb-8 min-h-screen">
           {children}

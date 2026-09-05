@@ -104,6 +104,7 @@ function ExceptionsInner() {
       batchStatus={summary?.status}
       matchRatePct={summary?.match_rate_pct}
       exceptionCount={summary?.exception_count}
+      activeBatchId={batchId}
     >
       <div className="flex flex-col w-full max-w-5xl mx-auto space-y-4 pb-8">
         <ExceptionQueueHeader

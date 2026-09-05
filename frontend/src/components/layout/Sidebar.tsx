@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -12,21 +12,60 @@ import {
 } from "lucide-react";
 import { ReconLogo } from "../ReconLogo";
 
+const LAST_BATCH_STORAGE_KEY = "reconai:lastActiveBatchId";
+
+function readLastBatchId(): string | null {
+  try {
+    return window.localStorage.getItem(LAST_BATCH_STORAGE_KEY);
+  } catch {
+    return null; // private browsing / storage disabled -- fall back to no batch
+  }
+}
+
+function writeLastBatchId(id: string) {
+  try {
+    window.localStorage.setItem(LAST_BATCH_STORAGE_KEY, id);
+  } catch {
+    // ignore -- nothing to persist to, links just won't carry a batch
+  }
+}
+
 interface SidebarProps {
   // undefined/null means "not known yet" (still loading, or the fetch
   // that would supply it failed) -- never substitute a stale/placeholder
   // number for that. The badge is simply omitted in that case.
   exceptionCount?: number | null;
+  // The batch currently being viewed, if any -- carried into every
+  // batch-scoped nav link's ?batch= query param so switching screens via
+  // the sidebar stays on this batch instead of silently dropping back to
+  // each page's own hardcoded default batch. Pages with no single active
+  // batch (the Batches list) pass nothing; the last real batch id seen on
+  // any other screen is remembered here (per-browser, via localStorage) so
+  // passing *through* that page doesn't drop the context either.
+  activeBatchId?: string | null;
 }
 
-export function Sidebar({ exceptionCount }: SidebarProps) {
+export function Sidebar({ exceptionCount, activeBatchId }: SidebarProps) {
   const hasExceptionCount = typeof exceptionCount === "number";
   const pathname = usePathname();
+  const [rememberedBatchId, setRememberedBatchId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (activeBatchId) {
+      writeLastBatchId(activeBatchId);
+      setRememberedBatchId(activeBatchId);
+    } else {
+      setRememberedBatchId(readLastBatchId());
+    }
+  }, [activeBatchId]);
+
+  const effectiveBatchId = activeBatchId ?? rememberedBatchId;
+  const batchQuery = effectiveBatchId ? `?batch=${effectiveBatchId}` : "";
 
   const navItems = [
     {
       name: "Dashboard",
-      href: "/",
+      href: `/${batchQuery}`,
       icon: LayoutDashboard,
       active: pathname === "/" || pathname === "/dashboard",
     },
@@ -38,7 +77,7 @@ export function Sidebar({ exceptionCount }: SidebarProps) {
     },
     {
       name: "Exception Review",
-      href: "/exceptions",
+      href: `/exceptions${batchQuery}`,
       icon: AlertTriangle,
       active: pathname.startsWith("/exceptions") || pathname.startsWith("/review"),
       badge: hasExceptionCount && exceptionCount > 0 ? exceptionCount : undefined,
@@ -46,7 +85,7 @@ export function Sidebar({ exceptionCount }: SidebarProps) {
     },
     {
       name: "Scorecard",
-      href: "/scorecard",
+      href: `/scorecard${batchQuery}`,
       icon: BarChart3,
       active: pathname === "/scorecard",
     },

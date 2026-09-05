@@ -5,6 +5,7 @@ import {
   ExceptionsResponse,
   ReviewDecisionResponse,
   ScorecardResponse,
+  CreateBatchResponse,
 } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api";
@@ -24,6 +25,19 @@ export async function fetchBatchSummary(batchId: string): Promise<BatchSummaryRe
   const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) {
     throw new Error(`Failed to fetch batch summary: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function createBatch(label?: string): Promise<CreateBatchResponse> {
+  const url = `${API_BASE}/batches`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(label ? { label } : {}),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to create batch: ${res.status} ${res.statusText}`);
   }
   return res.json();
 }

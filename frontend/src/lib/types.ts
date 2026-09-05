@@ -1,3 +1,10 @@
+export interface CreateBatchResponse {
+  batch_id: string;
+  label: string;
+  orders_count: number;
+  bank_statements_count: number;
+}
+
 export interface AuditTrailSummaryItem {
   id: string;
   reconciliation_id: string;
