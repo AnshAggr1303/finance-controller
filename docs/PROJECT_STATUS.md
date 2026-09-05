@@ -114,14 +114,16 @@ microsecond fingerprints as false match signal.
 Had a real bug (compared a bank row's own PK against a ground-truth
 token instead of comparing both rows' tokens) — fixed, reverified 35/0/0/15.
 
-## FastAPI layer (`backend/app/main.py`) — all 7 endpoints built & verified
+## FastAPI layer (`backend/app/main.py`) — all 8 endpoints built & verified
 
 `POST /batches`, `POST /batches/{id}/run`, `GET /batches/{id}/exceptions`,
 `POST /batches/{id}/review/{reconciliation_id}`, `GET /batches` (list with
 summary stats), `GET /batches/{id}/summary` (dashboard aggregates:
 counts, settled amount, pipeline breakdown, recent audit trail),
 `GET /batches/{id}/matches` (full matched-records list for the Matched
-Records screen). All
+Records screen), `GET /batches/{id}/scorecard` (TP/FP/FN/TN + precision/
+recall/F1 for the Scorecard screen, reusing `data/scoring.py`'s
+classification directly). All
 reuse existing verified logic rather than reimplementing it.
 
 ## Frontend (Next.js) — IN PROGRESS
@@ -185,8 +187,21 @@ self-hosted SVGs instead.
   decision submitted against it; `data/scoring.py` reconfirmed
   35/0/0/15 unchanged afterward.
 
-**Not yet built:** Scorecard (`1:1265` — wire to `scoring.py`'s output
-or a dedicated endpoint).
+- Scorecard (`1:1265`) — wired to a new `GET /batches/{id}/scorecard`
+  that imports `data.scoring`'s `fetch_recon_rows`/`compute_metrics`/
+  `fetch_batch_label` directly and calls them as-is — no second
+  TP/FP/FN/TN classification. `true_match_id` is read here on purpose
+  (this endpoint IS the verification surface); every other endpoint
+  still never selects it. Verified exact match: the endpoint's
+  `tp=35 fp=0 fn=0 tn=15, precision=recall=f1=1.0` diffed identical
+  against the CLI's own `python data/scoring.py --batch-id 9c75a7ac-...`
+  output; live in-browser confirmed the same numbers render exactly
+  (Precision/Recall/F1 all "100.00%", Exception Rate 30.00%), no
+  console errors. Figma's fabricated per-row remediation/auditor detail
+  was not reproduced — the Discrepancy Log shows real data only, and a
+  clean "no discrepancies" state since this batch genuinely has none.
+
+**Not yet built:** deployment.
 
 ## Verified results (ground-truth checked via SQL, never eyeballed)
 
@@ -224,12 +239,16 @@ Supabase SQL Editor and was never committed before now.
 
 **Built & verified:** schema + RLS + unique constraint, data generator,
 all 5 graph nodes, two-pass orchestration, human review CLI + API path
-with pattern-warning hardening, scoring script, all 7 FastAPI endpoints
-(added `GET /batches/{id}/matches`), Figma design (reviewed/corrected),
-shared layout shell, Dashboard screen, Batches List screen, Re-trigger
-button wiring, Matched Records screen, Exception Review Queue screen.
+with pattern-warning hardening, scoring script, all 8 FastAPI endpoints
+(added `GET /batches/{id}/matches` and `GET /batches/{id}/scorecard`),
+Figma design (reviewed/corrected), shared layout shell, Dashboard
+screen, Batches List screen, Re-trigger button wiring, Matched Records
+screen, Exception Review Queue screen, Scorecard screen.
 
-**Not yet built:** Scorecard screen, deployment.
+**Not yet built:** deployment.
+
+All 5 planned screens are now built and verified against the trusted
+batch `9c75a7ac-...`. Remaining work is deployment only.
 
 ## Working conventions established so far
 
