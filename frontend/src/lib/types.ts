@@ -62,6 +62,29 @@ export interface MatchesResponse {
   matches: MatchItem[];
 }
 
+export interface ScorecardProblemRow {
+  order_id: string;
+  classification: string;
+  status: string;
+}
+
+export interface ScorecardResponse {
+  batch_id: string;
+  label: string;
+  created_at: string;
+  total: number;
+  tp: number;
+  fp: number;
+  fn: number;
+  tn: number;
+  precision: number;
+  recall: number;
+  f1: number;
+  exception_rate: number;
+  exceptions: number;
+  problems: ScorecardProblemRow[];
+}
+
 export interface CandidateItem {
   index: number;
   id: string;

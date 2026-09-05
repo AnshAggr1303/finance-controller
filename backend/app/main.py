@@ -9,6 +9,7 @@ Endpoints:
   - GET  /batches/{id}/exceptions: List records awaiting human review with candidates.
   - POST /batches/{id}/review/{reconciliation_id}: Submit a human review decision.
   - GET  /batches/{id}/matches: Full list of matched order/bank-row pairs with audit detail.
+  - GET  /batches/{id}/scorecard: Ground-truth TP/FP/FN/TN scorecard (reuses data/scoring.py).
 """
 
 import math
@@ -33,6 +34,7 @@ if REPO_ROOT not in sys.path:
 from app.db import supabase
 import data.generator as generator
 import data.push_to_db as push_to_db
+import data.scoring as scoring
 from app.graph.human_review import (
     _pattern_label,
     apply_decision,
@@ -187,6 +189,29 @@ class AuditTrailSummaryItem(BaseModel):
     confidence: Optional[float] = None
     reasoning: Optional[str] = None
     created_at: Optional[str] = None
+
+
+class ScorecardProblemRow(BaseModel):
+    order_id: str
+    classification: str
+    status: str
+
+
+class ScorecardResponse(BaseModel):
+    batch_id: str
+    label: str
+    created_at: str
+    total: int
+    tp: int
+    fp: int
+    fn: int
+    tn: int
+    precision: float
+    recall: float
+    f1: float
+    exception_rate: float
+    exceptions: int
+    problems: List[ScorecardProblemRow]
 
 
 class BatchSummaryResponse(BaseModel):
@@ -749,4 +774,52 @@ def submit_review_decision(
         status=outcome,
         action=decision["action"],
         message=f"Successfully applied decision '{decision['action']}' -> {outcome}",
+    )
+
+
+@app.get("/batches/{id}/scorecard", response_model=ScorecardResponse)
+def get_batch_scorecard(id: str):
+    """Ground-truth scorecard for a batch, for the Scorecard screen.
+
+    Reuses data/scoring.py's fetch_recon_rows/compute_metrics exactly --
+    the same TP/FP/FN/TN classification the CLI scorecard uses, not a
+    second reimplementation of it. true_match_id is read here on purpose
+    (this endpoint IS the verification surface); every other endpoint in
+    this file still never selects it.
+    """
+    batch = supabase.table("batches").select("id").eq("id", id).execute().data
+    if not batch:
+        raise HTTPException(status_code=404, detail=f"Batch {id} not found")
+
+    rows = scoring.fetch_recon_rows(id)
+    if not rows:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No reconciliation_state rows found for batch {id}.",
+        )
+
+    label, created_at = scoring.fetch_batch_label(id)
+    m = scoring.compute_metrics(rows)
+
+    problems = [
+        ScorecardProblemRow(order_id=oid, classification=cls, status=st)
+        for oid, cls, st in sorted(m["classified_rows"])
+        if cls in ("FP", "FN")
+    ]
+
+    return ScorecardResponse(
+        batch_id=id,
+        label=label or "",
+        created_at=str(created_at or ""),
+        total=m["total"],
+        tp=m["TP"],
+        fp=m["FP"],
+        fn=m["FN"],
+        tn=m["TN"],
+        precision=m["precision"],
+        recall=m["recall"],
+        f1=m["f1"],
+        exception_rate=m["exception_rate"],
+        exceptions=m["exceptions"],
+        problems=problems,
     )

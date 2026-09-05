@@ -4,6 +4,7 @@ import {
   MatchesResponse,
   ExceptionsResponse,
   ReviewDecisionResponse,
+  ScorecardResponse,
 } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api";
@@ -58,6 +59,15 @@ export async function fetchBatchExceptions(batchId: string): Promise<ExceptionsR
   const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) {
     throw new Error(`Failed to fetch exceptions: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function fetchBatchScorecard(batchId: string): Promise<ScorecardResponse> {
+  const url = `${API_BASE}/batches/${batchId}/scorecard`;
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch scorecard: ${res.status} ${res.statusText}`);
   }
   return res.json();
 }
