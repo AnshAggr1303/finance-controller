@@ -13,6 +13,10 @@ resolve with measured, stated accuracy, and hands back an honest exception
 list for the records it can't, rather than guessing and hiding the failure
 rate.
 
+## Demo Video
+
+https://drive.google.com/file/d/1GXhPA67q4j-E1XdEyjr73km7ObuYcqrP/view?usp=sharing
+
 ## THE BAR
 
 - ✅ **Throughput** — all 50 orders in a batch are processed, every run.
