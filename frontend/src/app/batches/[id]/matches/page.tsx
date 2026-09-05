@@ -83,7 +83,7 @@ export default function MatchedRecordsPage({
         <MatchedRecordsHeader
           batchId={batchId}
           batchLabel={summary?.label ?? batchId}
-          totalOrders={summary?.total_orders ?? summary?.order_count ?? 0}
+          totalOrders={summary?.total_orders ?? summary?.order_count}
           matches={matches}
         />
 

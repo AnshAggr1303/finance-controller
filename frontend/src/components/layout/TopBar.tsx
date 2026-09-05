@@ -5,20 +5,25 @@ import { Search, Bell, Plus, User } from "lucide-react";
 import { ReconLogo } from "../ReconLogo";
 
 interface TopBarProps {
-  batchLabel?: string;
-  batchStatus?: string;
-  matchRatePct?: number;
+  // undefined/null on any of these means "not loaded yet" -- never
+  // substitute a fake plausible label/status/rate for that. The label
+  // shows an honest placeholder and the status chip is omitted entirely
+  // when unknown, same principle as Sidebar's exception badge.
+  batchLabel?: string | null;
+  batchStatus?: string | null;
+  matchRatePct?: number | null;
   onRunNewBatch?: () => void;
 }
 
 export function TopBar({
-  batchLabel = "frontend-integration-test",
-  batchStatus = "completed",
-  matchRatePct = 70.0,
+  batchLabel,
+  batchStatus,
+  matchRatePct,
   onRunNewBatch,
 }: TopBarProps) {
-  // Determine badge styling based on batch status
-  const isCompleted = batchStatus.toLowerCase() === "completed";
+  const hasStatus = typeof batchStatus === "string";
+  const isCompleted = hasStatus && batchStatus.toLowerCase() === "completed";
+  const hasRate = typeof matchRatePct === "number";
 
   return (
     <header className="fixed top-0 left-sidebar-width right-0 h-14 bg-surface-container-lowest/90 backdrop-blur-xl z-40 px-6 flex items-center justify-between shadow-[0_1px_8px_rgba(0,0,0,0.04)] border-b border-surface-container">
@@ -30,19 +35,20 @@ export function TopBar({
         </span>
         <div className="flex items-center gap-2">
           <span className="font-mono text-xs bg-surface-container-low px-2.5 py-1 rounded text-on-surface font-medium border border-surface-container">
-            {batchLabel}
+            {batchLabel ?? "—"}
           </span>
-          {isCompleted ? (
-            <span className="font-mono text-[11px] bg-secondary-container/60 text-on-secondary-container px-2.5 py-0.5 rounded-full flex items-center gap-1.5 font-medium">
-              <span className="w-1.5 h-1.5 rounded-full bg-secondary"></span>
-              Synchronized ({matchRatePct.toFixed(1)}%)
-            </span>
-          ) : (
-            <span className="font-mono text-[11px] bg-secondary-container text-on-secondary-container px-2.5 py-0.5 rounded-full flex items-center gap-1.5 font-medium">
-              <span className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse"></span>
-              Processing ({matchRatePct.toFixed(1)}%)
-            </span>
-          )}
+          {hasStatus &&
+            (isCompleted ? (
+              <span className="font-mono text-[11px] bg-secondary-container/60 text-on-secondary-container px-2.5 py-0.5 rounded-full flex items-center gap-1.5 font-medium">
+                <span className="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+                Synchronized{hasRate ? ` (${matchRatePct.toFixed(1)}%)` : ""}
+              </span>
+            ) : (
+              <span className="font-mono text-[11px] bg-secondary-container text-on-secondary-container px-2.5 py-0.5 rounded-full flex items-center gap-1.5 font-medium">
+                <span className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse"></span>
+                Processing{hasRate ? ` (${matchRatePct.toFixed(1)}%)` : ""}
+              </span>
+            ))}
         </div>
       </div>
 

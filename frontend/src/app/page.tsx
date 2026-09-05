@@ -89,16 +89,16 @@ function DashboardInner() {
 
   return (
     <Shell
-      batchLabel={summary?.label || "frontend-integration-test"}
-      batchStatus={summary?.status || "completed"}
-      matchRatePct={summary?.match_rate_pct ?? 70.0}
-      exceptionCount={summary?.exception_count ?? 15}
+      batchLabel={summary?.label}
+      batchStatus={summary?.status}
+      matchRatePct={summary?.match_rate_pct}
+      exceptionCount={summary?.exception_count}
     >
       <div className="flex flex-col w-full max-w-7xl mx-auto space-y-4">
         {/* Operational Header with Epoch & Filter Bar */}
         <OperationalHeader
           currentBatchId={activeBatchId}
-          currentBatchLabel={summary?.label || "frontend-integration-test"}
+          currentBatchLabel={summary?.label}
           batchCreatedAt={summary?.created_at}
           batchStatus={summary?.status}
           batches={batches}

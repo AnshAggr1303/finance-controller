@@ -6,7 +6,9 @@ import { BatchListItem } from "@/lib/types";
 
 interface OperationalHeaderProps {
   currentBatchId: string;
-  currentBatchLabel: string;
+  // undefined/null means "not loaded yet" -- never substitute a fake
+  // plausible label/date for that, show an honest placeholder instead.
+  currentBatchLabel?: string | null;
   batchCreatedAt?: string;
   batchStatus?: string;
   batches?: BatchListItem[];
@@ -34,14 +36,14 @@ export function OperationalHeader({
   // window as non-actionable too, not just "not completed", so the button
   // isn't briefly clickable before we know whether it should be disabled.
   const isRetriggerDisabled = !batchStatus || isCompleted || isRetriggering;
-  // Format batch date or default
+  // Format batch date, or an honest placeholder -- never a fake date.
   const dateDisplay = batchCreatedAt
     ? new Date(batchCreatedAt).toLocaleDateString("en-US", {
         month: "short",
         day: "numeric",
         year: "numeric",
       }) + ` (${new Date(batchCreatedAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", timeZone: "UTC" })} UTC)`
-    : "May 18, 2025 (00:00–14:35 UTC)";
+    : "—";
 
   return (
     <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pt-4 pb-2">
@@ -90,7 +92,7 @@ export function OperationalHeader({
             </select>
           ) : (
             <span className="font-mono font-semibold text-primary">
-              {currentBatchLabel}
+              {currentBatchLabel ?? "—"}
             </span>
           )}
         </div>

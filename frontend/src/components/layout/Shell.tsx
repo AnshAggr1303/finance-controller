@@ -6,9 +6,9 @@ import { TopBar } from "./TopBar";
 
 interface ShellProps {
   children: React.ReactNode;
-  batchLabel?: string;
-  batchStatus?: string;
-  matchRatePct?: number;
+  batchLabel?: string | null;
+  batchStatus?: string | null;
+  matchRatePct?: number | null;
   exceptionCount?: number | null;
   onRunNewBatch?: () => void;
 }
