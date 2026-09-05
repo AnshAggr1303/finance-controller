@@ -197,15 +197,28 @@ This is the trusted batch for all frontend work.
 **Known, accepted limitations:** `gemini-3.6-flash` ignores
 `temperature=0` (Node 5 not fully deterministic run-to-run). Free-tier
 Gemini quota is 20 requests/DAY per project — get a paid key before any
-live demo. No `DELETE /batches/{id}` endpoint exists yet, and a plain
-`delete from batches where id = ...` is NOT sufficient on its own —
-`human_overrides.resolved_bank_row_id` has no cascade to
-`raw_bank_statements`, so it blocks the delete until `human_overrides`
-and `audit_trail` are cleared first (verified directly: the single-
-statement delete failed with a real FK violation). Test/probe batches
-currently require this manual, correctly-ordered cleanup:
-`human_overrides` → `audit_trail` → `reconciliation_state` →
-`raw_bank_statements` → `raw_orders` → `batches`.
+live demo. No `DELETE /batches/{id}` endpoint exists yet — cleaning up
+a test/probe batch still means running `delete from batches where
+id = ...` by hand (e.g. via the Supabase SQL Editor).
+
+**Resolved:** that manual delete used to fail outright.
+`human_overrides.resolved_order_row_id` and `resolved_bank_row_id` had
+no delete action at all (Postgres default), so deleting a batch that
+had ANY human-reviewed record hit a real FK violation on
+`human_overrides_resolved_bank_row_id_fkey` and blocked the whole
+cascade — confirmed live before the fix. Migrated both to `ON DELETE
+SET NULL`, matching the pattern `reconciliation_state`'s equivalent
+columns already used. Re-verified live on a fresh disposable batch
+(not `9c75a7ac-...`) with a real human-override record: the single
+`delete from batches where id = ...` now succeeds end-to-end with zero
+manual cleanup, confirmed by zero rows remaining across all 6 tables
+afterward. `data/scoring.py` on `9c75a7ac-...` reconfirmed untouched
+(35 TP / 0 FP / 0 FN / 15 TN) both before and after.
+
+`db/schema.sql` now exists, reconstructed from live introspection
+(`pg_constraint`, `pg_indexes`, `pg_policies`, `pg_class`) rather than
+memory — the schema had only ever been applied by hand through the
+Supabase SQL Editor and was never committed before now.
 
 ## What's built and verified vs. not yet started
 
